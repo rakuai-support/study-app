@@ -3,10 +3,10 @@
 .env.local
 .env.production
 
-# データベースファイル
-*.db
-*.sqlite
-*.sqlite3
+# データベースファイル（本番用は含む）
+# *.db
+# *.sqlite
+# *.sqlite3
 
 # Python関連
 __pycache__/
