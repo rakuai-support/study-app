@@ -18,13 +18,13 @@ app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-pr
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 if not GEMINI_API_KEY:
-    print("[STARTUP] ⚠️ GEMINI_API_KEY環境変数が設定されていません。AI機能は無効になります。")
+    print("[STARTUP] WARNING: GEMINI_API_KEY environment variable not set. AI features will be disabled.")
 else:
-    print(f"[STARTUP] ✅ GEMINI_API_KEY loaded successfully (length: {len(GEMINI_API_KEY)})")
+    print(f"[STARTUP] SUCCESS: GEMINI_API_KEY loaded successfully (length: {len(GEMINI_API_KEY)})")
 
 # 管理者キー（環境変数から取得）
 ADMIN_KEY = os.environ.get('ADMIN_KEY', 'admin123')
-print(f"[STARTUP] ✅ ADMIN_KEY configured")
+print("[STARTUP] SUCCESS: ADMIN_KEY configured")
 
 # ===== 追加: 全リクエストをログに記録するデバッグコード =====
 @app.before_request
@@ -44,6 +44,108 @@ def log_request_info():
         print('-----------------------------------------------------')
     except Exception as e:
         print(f"[REQUEST LOG] Error in logging middleware: {e}")
+# ===== ここまで =====
+
+# ===== データベース初期化関数 =====
+def initialize_database():
+    """アプリ起動時にデータベースを初期化"""
+    db_path = 'study_app.db'
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # usersテーブルを作成
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            is_premium INTEGER DEFAULT 0,
+            premium_expires_at TEXT,
+            free_usage_count INTEGER DEFAULT 0,
+            last_reset_date TEXT DEFAULT (date('now')),
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """)
+        
+        # activation_codesテーブルを作成
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS activation_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            user_email TEXT NOT NULL,
+            is_used INTEGER DEFAULT 0,
+            expires_at TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """)
+        
+        # learning_itemsテーブルを作成（TSVデータ用）
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS learning_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identifier TEXT UNIQUE NOT NULL,
+            learningPromptData TEXT NOT NULL,
+            contentCreationPrompt TEXT NOT NULL
+        )
+        """)
+        
+        # progressテーブルを作成
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            identifier TEXT NOT NULL,
+            progress_data TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        """)
+        
+        # インデックス作成
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_progress_user_identifier ON progress(user_id, identifier)")
+        
+        conn.commit()
+        print("[STARTUP] SUCCESS: Database tables initialized")
+        
+        # TSVデータが存在しない場合はインポート
+        cursor.execute("SELECT COUNT(*) FROM learning_items")
+        count = cursor.fetchone()[0]
+        
+        if count == 0:
+            print("[STARTUP] INFO: Importing TSV data...")
+            import_tsv_data(cursor)
+            conn.commit()
+            print("[STARTUP] SUCCESS: TSV data imported")
+        else:
+            print(f"[STARTUP] INFO: Database already contains {count} learning items")
+            
+    except Exception as e:
+        print(f"[STARTUP] ERROR: Database initialization failed: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def import_tsv_data(cursor):
+    """TSVファイルからデータをインポート"""
+    try:
+        tsv_file = '学習指導要領アプリ - データ.tsv'
+        if os.path.exists(tsv_file):
+            df = pd.read_csv(tsv_file, sep='\t')
+            for _, row in df.iterrows():
+                cursor.execute(
+                    'INSERT OR IGNORE INTO learning_items (identifier, learningPromptData, contentCreationPrompt) VALUES (?, ?, ?)',
+                    (row['identifier'], row['learningPromptData'], row['contentCreationPrompt'])
+                )
+        else:
+            print(f"[STARTUP] WARNING: TSV file not found: {tsv_file}")
+    except Exception as e:
+        print(f"[STARTUP] ERROR: TSV import failed: {e}")
+
+# アプリ起動時にデータベースを初期化
+initialize_database()
 # ===== ここまで =====
 
 
