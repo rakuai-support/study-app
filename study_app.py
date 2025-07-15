@@ -144,8 +144,6 @@ def import_tsv_data(cursor):
     except Exception as e:
         print(f"[STARTUP] ERROR: TSV import failed: {e}")
 
-# アプリ起動時にデータベースを初期化
-initialize_database()
 # ===== ここまで =====
 
 
@@ -235,6 +233,9 @@ class StudyDataViewer:
         except (json.JSONDecodeError, KeyError) as e:
             print(f"データ解析エラー (ID: {identifier}): {e}")
             return None
+
+# アプリ起動時にデータベースを初期化
+initialize_database()
 
 # グローバルインスタンス
 viewer = StudyDataViewer('study_app.db')
