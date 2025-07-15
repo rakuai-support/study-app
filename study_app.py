@@ -55,7 +55,11 @@ def initialize_database():
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # usersテーブルを作成
+        # 既存テーブルの確認
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        existing_tables = [table[0] for table in cursor.fetchall()]
+        
+        # usersテーブルを作成（既存データベースと互換性を保つ）
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,16 +85,6 @@ def initialize_database():
         )
         """)
         
-        # learning_itemsテーブルを作成（TSVデータ用）
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS learning_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            identifier TEXT UNIQUE NOT NULL,
-            learningPromptData TEXT NOT NULL,
-            contentCreationPrompt TEXT NOT NULL
-        )
-        """)
-        
         # progressテーブルを作成
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS progress (
@@ -103,24 +97,31 @@ def initialize_database():
         )
         """)
         
-        # インデックス作成
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_progress_user_identifier ON progress(user_id, identifier)")
+        # learning_itemsテーブルは既存の構造をそのまま使用
+        if 'learning_items' not in existing_tables:
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS learning_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                identifier TEXT UNIQUE NOT NULL,
+                learningPromptData TEXT NOT NULL,
+                contentCreationPrompt TEXT NOT NULL
+            )
+            """)
+        
+        # インデックス作成（エラーを無視）
+        try:
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_progress_user_identifier ON progress(user_id, identifier)")
+        except:
+            pass
         
         conn.commit()
         print("[STARTUP] SUCCESS: Database tables initialized")
         
-        # TSVデータが存在しない場合はインポート
+        # データ確認
         cursor.execute("SELECT COUNT(*) FROM learning_items")
         count = cursor.fetchone()[0]
-        
-        if count == 0:
-            print("[STARTUP] INFO: Importing TSV data...")
-            import_tsv_data(cursor)
-            conn.commit()
-            print("[STARTUP] SUCCESS: TSV data imported")
-        else:
-            print(f"[STARTUP] INFO: Database already contains {count} learning items")
+        print(f"[STARTUP] INFO: Database contains {count} learning items")
             
     except Exception as e:
         print(f"[STARTUP] ERROR: Database initialization failed: {e}")
@@ -131,7 +132,7 @@ def initialize_database():
 def import_tsv_data(cursor):
     """TSVファイルからデータをインポート"""
     try:
-        tsv_file = '学習指導要領アプリ - データ.tsv'
+        tsv_file = 'learning_data.tsv'
         if os.path.exists(tsv_file):
             df = pd.read_csv(tsv_file, sep='\t')
             for _, row in df.iterrows():
@@ -234,8 +235,12 @@ class StudyDataViewer:
             print(f"データ解析エラー (ID: {identifier}): {e}")
             return None
 
-# アプリ起動時にデータベースを初期化
-initialize_database()
+# アプリ起動時にデータベースを初期化（既存DBファイルがある場合はスキップ）
+if not os.path.exists('study_app.db') or os.path.getsize('study_app.db') < 1000:
+    print("[STARTUP] INFO: Initializing new database...")
+    initialize_database()
+else:
+    print("[STARTUP] INFO: Using existing database file")
 
 # グローバルインスタンス
 viewer = StudyDataViewer('study_app.db')
