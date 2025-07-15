@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+
+{% block title %}{{ content.identifier }} - 学習指導要領アプリ{% endblock %}
+
+{% block content %}
+<div class="container" data-content-info='{{ {
+    "learningObjective": content.learningPromptData.learningObjective,
+    "subject": content.learningPromptData.subject,
+    "grade": content.learningPromptData.grade,
+    "keywords": content.learningPromptData.keywords,
+    "beginnerGoals": content.contentCreationPrompt.progressTracking.beginnerGoals,
+    "intermediateGoals": content.contentCreationPrompt.progressTracking.intermediateGoals,
+    "advancedGoals": content.contentCreationPrompt.progressTracking.advancedGoals
+} | tojson }}'>
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}" class="breadcrumb-link">
+            <i class="fas fa-home"></i> ホーム
+        </a>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-current">{{ content.identifier }}</span>
+    </div>
+
+    <!-- 学習目標エリア（新設） -->
+    <div class="learning-goal-section">
+        <div class="goal-header">
+            <h2 class="goal-title">
+                <i class="fas fa-target"></i>
+                学習指導要領項目
+            </h2>
+        </div>
+        
+        <div class="goal-content">
+            <div class="goal-main">
+                <p class="goal-description">{{ content.learningPromptData.learningPrompt }}</p>
+                
+                <div class="keywords-section">
+                    <h4><i class="fas fa-tags"></i> キーワード</h4>
+                    <div class="keywords">
+                        {% for keyword in content.learningPromptData.keywords %}
+                        <span class="keyword-tag">{{ keyword }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 進捗トラッキング（最上部に移動） -->
+    <div class="progress-section top-priority">
+        <div class="progress-header">
+            <h4><i class="fas fa-chart-line"></i> 学習項目別進捗状況（50％以上で項目完了）</h4>
+            <div class="progress-actions">
+                <button class="btn btn-sm btn-danger reset-progress-btn" data-identifier="{{ content.identifier }}">
+                    <i class="fas fa-undo"></i> この項目をリセット
+                </button>
+            </div>
+        </div>
+
+        <!-- 全体進捗 -->
+        <div class="overall-progress" data-identifier="{{ content.identifier }}">
+            <div class="overall-progress-header">
+                <h5><i class="fas fa-target"></i> 達成ゴール数（率）</h5>
+                <span class="overall-progress-text">0/0 (0%)</span>
+            </div>
+            <div class="overall-progress-bar">
+                <div class="progress-bar-fill"></div>
+            </div>
+        </div>
+        
+        <div class="progress-level" data-identifier="{{ content.identifier }}" data-level="beginnerGoals">
+            <div class="progress-level-header">
+                <h5><i class="fas fa-seedling"></i> 初心者ゴール</h5>
+                <div class="progress-info">
+                    <span class="progress-text">0/{{ content.contentCreationPrompt.progressTracking.beginnerGoals|length }} (0%)</span>
+                    <div class="progress-bar">
+                        <div class="progress-bar-fill"></div>
+                    </div>
+                </div>
+            </div>
+            <ul class="goal-list">
+                {% for goal in content.contentCreationPrompt.progressTracking.beginnerGoals %}
+                <li class="goal-item">
+                    <label class="goal-checkbox-wrapper">
+                        <input type="checkbox" 
+                               class="progress-checkbox" 
+                               data-identifier="{{ content.identifier }}" 
+                               data-level="beginnerGoals" 
+                               data-index="{{ loop.index0 }}">
+                        <span class="goal-text">{{ goal }}</span>
+                    </label>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="progress-level" data-identifier="{{ content.identifier }}" data-level="intermediateGoals">
+            <div class="progress-level-header">
+                <h5><i class="fas fa-tree"></i> 中級者ゴール</h5>
+                <div class="progress-info">
+                    <span class="progress-text">0/{{ content.contentCreationPrompt.progressTracking.intermediateGoals|length }} (0%)</span>
+                    <div class="progress-bar">
+                        <div class="progress-bar-fill"></div>
+                    </div>
+                </div>
+            </div>
+            <ul class="goal-list">
+                {% for goal in content.contentCreationPrompt.progressTracking.intermediateGoals %}
+                <li class="goal-item">
+                    <label class="goal-checkbox-wrapper">
+                        <input type="checkbox" 
+                               class="progress-checkbox" 
+                               data-identifier="{{ content.identifier }}" 
+                               data-level="intermediateGoals" 
+                               data-index="{{ loop.index0 }}">
+                        <span class="goal-text">{{ goal }}</span>
+                    </label>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="progress-level" data-identifier="{{ content.identifier }}" data-level="advancedGoals">
+            <div class="progress-level-header">
+                <h5><i class="fas fa-trophy"></i> 上級者ゴール</h5>
+                <div class="progress-info">
+                    <span class="progress-text">0/{{ content.contentCreationPrompt.progressTracking.advancedGoals|length }} (0%)</span>
+                    <div class="progress-bar">
+                        <div class="progress-bar-fill"></div>
+                    </div>
+                </div>
+            </div>
+            <ul class="goal-list">
+                {% for goal in content.contentCreationPrompt.progressTracking.advancedGoals %}
+                <li class="goal-item">
+                    <label class="goal-checkbox-wrapper">
+                        <input type="checkbox" 
+                               class="progress-checkbox" 
+                               data-identifier="{{ content.identifier }}" 
+                               data-level="advancedGoals" 
+                               data-index="{{ loop.index0 }}">
+                        <span class="goal-text">{{ goal }}</span>
+                    </label>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <!-- コンテンツ制作プロンプト（横2列タイル表示） -->
+    <div class="content-creation-section">
+        <div class="section-header">
+            <h3 class="section-title">
+                <i class="fas fa-paint-brush"></i>
+                学習項目別応用例（AIと相談しながら進めてみよう）
+            </h3>
+        </div>
+        
+        <div class="content-tiles-grid">
+            {% for content_type in content.contentCreationPrompt.contentTypes %}
+            <div class="content-tile">
+                <div class="tile-header">
+                    <div class="tile-icon">
+                        {% if content_type.type == "動画・映像制作" %}
+                            <i class="fas fa-video"></i>
+                        {% elif content_type.type == "ブログ・文章" %}
+                            <i class="fas fa-pen"></i>
+                        {% elif content_type.type == "ゲーム・アプリ" %}
+                            <i class="fas fa-gamepad"></i>
+                        {% elif content_type.type == "アート・工作" %}
+                            <i class="fas fa-palette"></i>
+                        {% elif content_type.type == "実験・観察" %}
+                            <i class="fas fa-microscope"></i>
+                        {% elif content_type.type == "プログラミング・データ分析" %}
+                            <i class="fas fa-code"></i>
+                        {% elif content_type.type == "創作活動（小説・漫画）" %}
+                            <i class="fas fa-book"></i>
+                        {% elif content_type.type == "音楽制作" %}
+                            <i class="fas fa-music"></i>
+                        {% else %}
+                            <i class="fas fa-cog"></i>
+                        {% endif %}
+                    </div>
+                    <h4 class="tile-title">{{ content_type.type }}</h4>
+                </div>
+                
+                <div class="tile-meta">
+                    <span class="tile-difficulty difficulty-{{ content_type.difficulty.split('・')[0] }}">
+                        {{ content_type.difficulty }}
+                    </span>
+                    <span class="tile-time">
+                        <i class="fas fa-clock"></i>
+                        {{ content_type.estimatedTime }}
+                    </span>
+                </div>
+                
+                <div class="tile-content">
+                    <p class="tile-prompt">{{ content_type.prompt|truncate(120) }}</p>
+                </div>
+                
+                <div class="tile-actions">
+                    <button class="tile-ai-btn" data-content-type="{{ content_type.type }}" data-prompt="{{ content_type.prompt|e }}">
+                        <i class="fas fa-magic"></i> AIで試す
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- モチベーション要素（最下部） -->
+    <div class="motivation-section">
+        <div class="motivation-grid">
+            <div class="motivation-card">
+                <h4><i class="fas fa-heart"></i> モチベーションのコツ</h4>
+                <ul class="motivation-list">
+                    {% for tip in content.contentCreationPrompt.motivationTips %}
+                    <li>{{ tip }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            
+            <div class="motivation-card">
+                <h4><i class="fas fa-globe"></i> 実世界とのつながり</h4>
+                <ul class="connection-list">
+                    {% for connection in content.contentCreationPrompt.realWorldConnections %}
+                    <li>{{ connection }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- 全進捗削除セクション（最下部） -->
+    <section class="reset-section">
+        <div class="reset-container">
+            <details class="reset-details">
+                <summary class="reset-summary">
+                    <i class="fas fa-cog"></i> 詳細設定
+                </summary>
+                <div class="reset-content">
+                    <div class="reset-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>危険な操作：全ての学習進捗が削除されます</span>
+                    </div>
+                    <button class="btn-reset-all" onclick="resetAllProgress()">
+                        <i class="fas fa-trash-alt"></i> 全進捗を削除
+                    </button>
+                </div>
+            </details>
+        </div>
+    </section>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // AIボタンのイベントハンドラーを設定
+    document.querySelectorAll('.tile-ai-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const contentType = this.getAttribute('data-content-type');
+            const prompt = this.getAttribute('data-prompt');
+            
+            if (window.openAiModal && typeof window.openAiModal === 'function') {
+                window.openAiModal(contentType, prompt);
+            } else {
+                console.error('openAiModal function not available');
+                alert('AI機能の初期化に問題があります。ページを再読み込みしてください。');
+            }
+        });
+    });
+    
+    // フローティング進捗カードの更新（content画面用）
+    let retryCount = 0;
+    const maxRetries = 5;
+    
+    function tryUpdateProgress() {
+        console.log(`進捗更新試行 ${retryCount + 1}/${maxRetries}`);
+        
+        if (window.progressManager && window.progressManager.userId) {
+            console.log('progress-manager利用可能、進捗更新実行');
+            if (window.updateFloatingProgress) {
+                window.updateFloatingProgress();
+            }
+        } else if (retryCount < maxRetries) {
+            retryCount++;
+            console.log('progress-manager未初期化、1秒後に再試行');
+            setTimeout(tryUpdateProgress, 1000);
+        } else {
+            console.warn('progress-manager初期化に失敗しました');
+        }
+    }
+    
+    setTimeout(tryUpdateProgress, 1000);
+});
+</script>
+
+{% endblock %}

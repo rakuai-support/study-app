@@ -1,0 +1,1 @@
+web: gunicorn study_app:app

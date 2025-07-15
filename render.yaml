@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: study-app
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn study_app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ADMIN_KEY
+        sync: false
+      - key: FLASK_ENV
+        value: production

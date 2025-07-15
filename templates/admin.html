@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者画面 - 認証コード生成</title>
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        .admin-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        .admin-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .admin-header h1 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        .admin-header p {
+            color: #666;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #333;
+            font-weight: 500;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .generate-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .generate-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        .result {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            border-radius: 12px;
+            display: none;
+        }
+        .result.success {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            color: #4CAF50;
+        }
+        .result.error {
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid rgba(244, 67, 54, 0.3);
+            color: #F44336;
+        }
+        .code-display {
+            background: rgba(102, 126, 234, 0.1);
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-align: center;
+            color: #667eea;
+        }
+        .admin-tabs {
+            display: flex;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #666;
+            transition: all 0.3s ease;
+        }
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+            background: rgba(102, 126, 234, 0.05);
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .revoke-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #f44336, #d32f2f);
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .revoke-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(244, 67, 54, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>🔐 管理者画面</h1>
+            <p>プレミアム管理システム</p>
+        </div>
+        
+        <div class="admin-tabs">
+            <button class="tab-btn active" onclick="showTab('generate')">🎫 認証コード生成</button>
+            <button class="tab-btn" onclick="showTab('revoke')">❌ プレミアム解除</button>
+        </div>
+        
+        <!-- 認証コード生成タブ -->
+        <div id="generateTab" class="tab-content active">
+            <form id="codeGenerationForm">
+                <div class="form-group">
+                    <label for="adminKey">管理者キー</label>
+                    <input type="password" id="adminKey" value="admin123" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="userEmail">ユーザーメールアドレス</label>
+                    <input type="email" id="userEmail" placeholder="user@example.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="expiresDays">有効期限（日数）</label>
+                    <select id="expiresDays">
+                        <option value="30">30日</option>
+                        <option value="90">90日</option>
+                        <option value="365" selected>1年</option>
+                        <option value="1825">5年</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="generate-btn">
+                    🎫 認証コード生成
+                </button>
+            </form>
+        </div>
+
+        <!-- プレミアム解除タブ -->
+        <div id="revokeTab" class="tab-content">
+            <form id="revokeForm">
+                <div class="form-group">
+                    <label for="revokeAdminKey">管理者キー</label>
+                    <input type="password" id="revokeAdminKey" value="admin123" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="revokeUserEmail">ユーザーメールアドレス</label>
+                    <input type="email" id="revokeUserEmail" placeholder="user@example.com" required>
+                </div>
+                
+                <div style="background: rgba(244, 67, 54, 0.1); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <h4 style="color: #f44336; margin: 0 0 0.5rem 0;">⚠️ 注意</h4>
+                    <p style="color: #d32f2f; margin: 0; font-size: 0.9rem;">
+                        この操作により、ユーザーのプレミアム状態が即座に解除されます。<br>
+                        キャンセル処理や期限切れ時に使用してください。
+                    </p>
+                </div>
+                
+                <button type="submit" class="revoke-btn">
+                    ❌ プレミアム解除
+                </button>
+            </form>
+        </div>
+        
+        <div id="result" class="result">
+            <div id="resultMessage"></div>
+        </div>
+    </div>
+
+    <script>
+        // タブ切り替え機能
+        function showTab(tabName) {
+            // 全てのタブボタンの active クラスを削除
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            // 全てのタブコンテンツを非表示
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // 選択されたタブボタンに active クラスを追加
+            event.target.classList.add('active');
+            // 選択されたタブコンテンツを表示
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }
+
+        // 認証コード生成フォーム
+        document.getElementById('codeGenerationForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const adminKey = document.getElementById('adminKey').value;
+            const userEmail = document.getElementById('userEmail').value;
+            const expiresDays = parseInt(document.getElementById('expiresDays').value);
+            const resultDiv = document.getElementById('result');
+            const resultMessage = document.getElementById('resultMessage');
+            
+            try {
+                const response = await fetch('/api/generate-activation-code', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        admin_key: adminKey,
+                        user_email: userEmail,
+                        expires_days: expiresDays
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultMessage.innerHTML = `
+                        <h3>✅ 認証コード生成成功</h3>
+                        <p><strong>ユーザー:</strong> ${data.user_email}</p>
+                        <div class="code-display">${data.activation_code}</div>
+                        <p><strong>有効期限:</strong> ${new Date(data.expires_at).toLocaleString('ja-JP')}</p>
+                        <p>この認証コードをユーザーに送信してください。</p>
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultMessage.innerHTML = `
+                        <h3>❌ エラー</h3>
+                        <p>${data.error}</p>
+                    `;
+                }
+                
+                resultDiv.style.display = 'block';
+                
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultMessage.innerHTML = `
+                    <h3>❌ 通信エラー</h3>
+                    <p>${error.message}</p>
+                `;
+                resultDiv.style.display = 'block';
+            }
+        });
+
+        // プレミアム解除フォーム
+        document.getElementById('revokeForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const adminKey = document.getElementById('revokeAdminKey').value;
+            const userEmail = document.getElementById('revokeUserEmail').value;
+            const resultDiv = document.getElementById('result');
+            const resultMessage = document.getElementById('resultMessage');
+            
+            // 確認ダイアログ
+            if (!confirm(`本当にユーザー「${userEmail}」のプレミアム状態を解除しますか？\n\nこの操作は取り消すことができません。`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/revoke-premium', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        admin_key: adminKey,
+                        user_email: userEmail
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultMessage.innerHTML = `
+                        <h3>✅ プレミアム解除成功</h3>
+                        <p><strong>ユーザー:</strong> ${data.user_email}</p>
+                        <p>${data.message}</p>
+                        <p>ユーザーは次回ログイン時から無料プランに戻ります。</p>
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultMessage.innerHTML = `
+                        <h3>❌ エラー</h3>
+                        <p>${data.error}</p>
+                    `;
+                }
+                
+                resultDiv.style.display = 'block';
+                
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultMessage.innerHTML = `
+                    <h3>❌ 通信エラー</h3>
+                    <p>${error.message}</p>
+                `;
+                resultDiv.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

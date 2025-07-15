@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}ログイン - 学習指導要領アプリ{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-header">
+            <h2><i class="fas fa-sign-in-alt"></i> ログイン</h2>
+            <p>学習指導要領アプリにログインしてください</p>
+        </div>
+        
+        <form id="loginForm" class="auth-form">
+            <div class="form-group">
+                <label for="email">メールアドレス</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">パスワード</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" class="auth-btn">
+                <i class="fas fa-sign-in-alt"></i> ログイン
+            </button>
+        </form>
+        
+        <div class="auth-footer">
+            <p>アカウントをお持ちでない方は <a href="/register">新規登録</a></p>
+        </div>
+        
+        <div id="authError" class="auth-error"></div>
+    </div>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const errorDiv = document.getElementById('authError');
+    
+    try {
+        const response = await fetch('/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // ログイン成功
+            window.location.href = '/';
+        } else {
+            // エラー表示
+            errorDiv.textContent = data.error;
+            errorDiv.style.display = 'block';
+        }
+    } catch (error) {
+        errorDiv.textContent = 'ログインに失敗しました。もう一度お試しください。';
+        errorDiv.style.display = 'block';
+    }
+});
+</script>
+{% endblock %}

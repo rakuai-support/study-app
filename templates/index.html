@@ -1,0 +1,530 @@
+{% extends "base.html" %}
+
+{% block title %}【中学生版】AI学習アプリ（manabuwa）{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="container">
+        <div class="hero-content">
+            <h2 class="hero-title">
+                <i class="fas fa-seedling"></i>
+                一歩ずつ学ぶわ、AIと一緒に。
+            </h2>
+            <p class="hero-description">
+                741の学習指導要領項目から、今の気分や興味に合わせて自由に選んでください。一歩ずつ、あなたのペースで進んでいきましょう。
+            </p>
+            <!-- 基本テスト -->
+            <button onclick="alert('基本テスト成功!');" style="background: #ff6b6b; color: white; padding: 10px 20px; border: none; border-radius: 8px; margin-top: 1rem; cursor: pointer;">
+                <i class="fas fa-bug"></i> 基本テスト
+            </button>
+            
+            <!-- チュートリアル問題を修正するため一時的に無効化 -->
+            <p style="color: #666; margin-top: 1rem; font-size: 0.9rem;">チュートリアル機能は現在修正中です。</p>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- コンパクトな検索・進捗・フィルターエリア -->
+    <section class="compact-header-section">
+        <div class="search-progress-container">
+            <div class="search-filter-area">
+                <div class="search-box-compact">
+                    <div class="search-input-wrapper-compact">
+                        <input type="text" id="searchInput" placeholder="キーワード、識別子で検索..." class="search-input-compact">
+                        <button onclick="performSearch()" class="search-btn-compact">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="subject-filters-compact">
+                    <button class="filter-btn-compact active" onclick="filterBySubject('all')">
+                        <i class="fas fa-globe"></i>
+                        すべて
+                    </button>
+                    {% for subject in subjects %}
+                    <button class="filter-btn-compact" onclick="filterBySubject('{{ subject }}')">
+                        {% if subject == "国語" %}
+                            <i class="fas fa-pen-nib"></i>
+                        {% elif subject == "算数" or subject == "数学" %}
+                            <i class="fas fa-calculator"></i>
+                        {% elif subject == "理科" %}
+                            <i class="fas fa-flask"></i>
+                        {% elif subject == "社会" %}
+                            <i class="fas fa-globe-asia"></i>
+                        {% elif subject == "英語" %}
+                            <i class="fas fa-language"></i>
+                        {% else %}
+                            <i class="fas fa-book"></i>
+                        {% endif %}
+                        {{ subject }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% for subject, items in content_by_subject.items() %}
+    <section class="identifiers-section subject-section" data-subject="{{ subject }}">
+        <h3 class="section-title">
+            {% if subject == "国語" %}
+                <i class="fas fa-pen-nib"></i>
+            {% elif subject == "算数" or subject == "数学" %}
+                <i class="fas fa-calculator"></i>
+            {% elif subject == "理科" %}
+                <i class="fas fa-flask"></i>
+            {% elif subject == "社会" %}
+                <i class="fas fa-globe-asia"></i>
+            {% elif subject == "英語" %}
+                <i class="fas fa-language"></i>
+            {% else %}
+                <i class="fas fa-book"></i>
+            {% endif %}
+            {{ subject }} ({{ items|length }}件)
+        </h3>
+        <div class="identifiers-grid">
+            {% for item in items %}
+            <div class="identifier-card" data-identifier="{{ item.identifier }}" data-total-goals="{{ item.total_goals }}" title="{{ item.learning_prompt }}">
+                <div class="card-icon">
+                    {% if subject == "国語" %}
+                        <i class="fas fa-pen-nib"></i>
+                    {% elif subject == "算数" or subject == "数学" %}
+                        <i class="fas fa-calculator"></i>
+                    {% elif subject == "理科" %}
+                        <i class="fas fa-flask"></i>
+                    {% elif subject == "社会" %}
+                        <i class="fas fa-globe-asia"></i>
+                    {% elif subject == "英語" %}
+                        <i class="fas fa-language"></i>
+                    {% else %}
+                        <i class="fas fa-file-alt"></i>
+                    {% endif %}
+                </div>
+                <div class="card-content">
+                    <div class="card-header">
+                        <h4 class="card-title">{{ item.identifier }}</h4>
+                    </div>
+                    <p class="card-description">{{ item.learning_objective|truncate(80) }}</p>
+                    <div class="card-keywords">
+                        {% for keyword in item.keywords[:3] %}
+                        <span class="keyword-mini">{{ keyword }}</span>
+                        {% endfor %}
+                        {% if item.keywords|length > 3 %}
+                        <span class="keyword-more">+{{ item.keywords|length - 3 }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="card-progress" data-identifier="{{ item.identifier }}">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 0%;"></div>
+                        </div>
+                        <span class="progress-text">0%</span>
+                    </div>
+                </div>
+                <div class="card-arrow">
+                    <i class="fas fa-chevron-right"></i>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endfor %}
+
+    <!-- 全進捗削除セクション（最下部） -->
+    <section class="reset-section">
+        <div class="reset-container">
+            <details class="reset-details">
+                <summary class="reset-summary">
+                    <i class="fas fa-cog"></i> 詳細設定
+                </summary>
+                <div class="reset-content">
+                    <div class="reset-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>危険な操作：全ての学習進捗が削除されます</span>
+                    </div>
+                    <button class="btn-reset-all" onclick="resetAllProgress()">
+                        <i class="fas fa-trash-alt"></i> 全進捗を削除
+                    </button>
+                </div>
+            </details>
+        </div>
+    </section>
+</div>
+
+<script>
+function performSearch() {
+    const searchInput = document.getElementById('searchInput');
+    const searchTerm = searchInput.value.trim().toLowerCase();
+    
+    if (!searchTerm) {
+        // 空の場合は全て表示
+        document.querySelectorAll('.identifier-card').forEach(card => {
+            card.style.display = 'flex';
+        });
+        return;
+    }
+    
+    const cards = document.querySelectorAll('.identifier-card');
+    let hasResults = false;
+    
+    cards.forEach(card => {
+        const identifier = card.querySelector('.card-title').textContent.toLowerCase();
+        const description = card.querySelector('.card-description').textContent.toLowerCase();
+        const keywords = Array.from(card.querySelectorAll('.keyword-mini')).map(k => k.textContent.toLowerCase()).join(' ');
+        
+        if (identifier.includes(searchTerm) || description.includes(searchTerm) || keywords.includes(searchTerm)) {
+            card.style.display = 'flex';
+            hasResults = true;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+    
+    // 検索結果がない場合の表示
+    if (!hasResults) {
+        showSearchNoResults(searchTerm);
+    } else {
+        hideSearchNoResults();
+    }
+}
+
+function showSearchNoResults(searchTerm) {
+    // 既存の「結果なし」メッセージを削除
+    hideSearchNoResults();
+    
+    const container = document.querySelector('.container');
+    const noResultsDiv = document.createElement('div');
+    noResultsDiv.id = 'searchNoResults';
+    noResultsDiv.className = 'search-no-results';
+    noResultsDiv.innerHTML = `
+        <div class="no-results-content">
+            <i class="fas fa-search"></i>
+            <h3>「${searchTerm}」の検索結果が見つかりませんでした</h3>
+            <p>別のキーワードで検索してみてください</p>
+            <button onclick="clearSearch()" class="btn-clear-search">検索をクリア</button>
+        </div>
+    `;
+    
+    // 最初のsectionの前に挿入
+    const firstSection = container.querySelector('.identifiers-section');
+    if (firstSection) {
+        container.insertBefore(noResultsDiv, firstSection);
+    }
+}
+
+function hideSearchNoResults() {
+    const existing = document.getElementById('searchNoResults');
+    if (existing) {
+        existing.remove();
+    }
+}
+
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    performSearch();
+    hideSearchNoResults();
+}
+
+function viewContent(identifier) {
+    window.location.href = `/content/${identifier}`;
+}
+
+function filterBySubject(subject) {
+    // フィルターボタンのアクティブ状態を更新
+    document.querySelectorAll('.filter-btn-compact').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    // セクションの表示/非表示を切り替え
+    document.querySelectorAll('.subject-section').forEach(section => {
+        if (subject === 'all' || section.dataset.subject === subject) {
+            section.style.display = 'block';
+        } else {
+            section.style.display = 'none';
+        }
+    });
+    
+    // 検索結果表示をクリア
+    hideSearchNoResults();
+}
+
+
+// 進捗ダッシュボード更新機能
+function updateProgressDashboard() {
+    try {
+        // 進捗データを取得して表示を更新
+        if (window.progressManager) {
+            const stats = window.progressManager.getOverallStats();
+            
+            // メイン進捗率
+            const progressPercentage = Math.round(stats.overallPercentage);
+            
+            // 要素の存在チェック付きで更新
+            const mainProgressPercentage = document.getElementById('mainProgressPercentage');
+            if (mainProgressPercentage) mainProgressPercentage.textContent = progressPercentage + '%';
+            
+            const mainProgressText = document.getElementById('mainProgressText');
+            if (mainProgressText) mainProgressText.textContent = progressPercentage + '%';
+            
+            // 円形プログレスバーの角度を設定
+            const mainProgressCircle = document.getElementById('mainProgressCircle');
+            if (mainProgressCircle) {
+                const progressAngle = (progressPercentage / 100) * 360;
+                mainProgressCircle.style.setProperty('--progress-angle', progressAngle + 'deg');
+            }
+            
+            // 統計数値更新（要素存在チェック付き）
+            const completedItems = document.getElementById('completedItems');
+            if (completedItems) completedItems.textContent = stats.completedItems;
+            
+            const completedGoals = document.getElementById('completedGoals');
+            if (completedGoals) completedGoals.textContent = stats.completedGoals.toLocaleString();
+            
+            const totalItems = document.getElementById('totalItems');
+            if (totalItems) totalItems.textContent = stats.totalItems;
+            
+            // 達成バッジとモチベーションメッセージを更新
+            updateAchievementBadge(progressPercentage);
+            updateMotivationMessage(progressPercentage, stats.completedItems);
+        }
+    } catch (error) {
+        console.error('❌ updateProgressDashboard エラー:', error);
+    }
+}
+
+function updateAchievementBadge(percentage) {
+    try {
+        const badge = document.getElementById('achievementBadge');
+        if (!badge) return;
+        
+        const badgeIcon = badge.querySelector('i');
+        if (!badgeIcon) return;
+        
+        if (percentage >= 90) {
+            badgeIcon.className = 'fas fa-crown';
+            badge.style.background = 'linear-gradient(135deg, #ffd700, #ffb347)';
+        } else if (percentage >= 75) {
+            badgeIcon.className = 'fas fa-trophy';
+            badge.style.background = 'linear-gradient(135deg, #ff9800, #f57c00)';
+        } else if (percentage >= 50) {
+            badgeIcon.className = 'fas fa-star';
+            badge.style.background = 'linear-gradient(135deg, #4caf50, #388e3c)';
+        } else if (percentage >= 25) {
+            badgeIcon.className = 'fas fa-leaf';
+            badge.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+        } else {
+            badgeIcon.className = 'fas fa-seedling';
+            badge.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+        }
+    } catch (error) {
+        console.error('❌ updateAchievementBadge エラー:', error);
+    }
+}
+
+function updateMotivationMessage(percentage, completedItems) {
+    try {
+        const messageElement = document.getElementById('motivationMessage');
+        if (!messageElement) return;
+        
+        const messageSpan = messageElement.querySelector('span');
+        const messageIcon = messageElement.querySelector('i');
+        if (!messageSpan || !messageIcon) return;
+        
+        let message = '';
+        let icon = 'fas fa-heart';
+        
+        if (percentage >= 90) {
+            message = `🎉 素晴らしい！${completedItems}項目も完了しました！あなたは学習のチャンピオンです！`;
+            icon = 'fas fa-crown';
+        } else if (percentage >= 75) {
+            message = `🏆 驚異的な進歩です！${completedItems}項目完了。ゴールまであと少し！`;
+            icon = 'fas fa-trophy';
+        } else if (percentage >= 50) {
+            message = `⭐ 半分以上達成！${completedItems}項目の成果は素晴らしいです！`;
+            icon = 'fas fa-star';
+        } else if (percentage >= 25) {
+            message = `🌿 順調に成長中！${completedItems}項目完了。この調子で続けましょう！`;
+            icon = 'fas fa-leaf';
+        } else if (completedItems > 0) {
+            message = `🌱 学習の旅が始まりました！${completedItems}項目完了。一歩ずつ進んでいきましょう！`;
+            icon = 'fas fa-seedling';
+        } else {
+            message = '学習の旅を始めましょう！一歩ずつ、あなたのペースで。';
+            icon = 'fas fa-heart';
+        }
+        
+        messageIcon.className = icon;
+        messageSpan.textContent = message;
+    } catch (error) {
+        console.error('❌ updateMotivationMessage エラー:', error);
+    }
+}
+
+// DOMが読み込まれてからイベントリスナーを設定
+document.addEventListener('DOMContentLoaded', function() {
+    // Enterキーでの検索を有効にする
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+        
+        // リアルタイム検索（入力中）
+        searchInput.addEventListener('input', function() {
+            if (this.value.trim() === '') {
+                // 空の場合は全て表示
+                document.querySelectorAll('.identifier-card').forEach(card => {
+                    card.style.display = 'flex';
+                });
+                hideSearchNoResults();
+            } else {
+                performSearch();
+            }
+        });
+    }
+    
+    // カードクリックで詳細ページへ遷移
+    document.querySelectorAll('.identifier-card').forEach(card => {
+        card.addEventListener('click', function(event) {
+            // ボタンやリンクなど、特定の要素のクリックは除外
+            if (event.target.closest('button, a, .card-progress, .achievement-badge')) {
+                return;
+            }
+            const identifier = this.dataset.identifier;
+            if (identifier) {
+                viewContent(identifier);
+            }
+        });
+    });
+    
+    // 初回ダッシュボード更新
+    setTimeout(updateProgressDashboard, 100);
+    
+    // progress-managerがロードされた後に再更新
+    setTimeout(updateProgressDashboard, 1000);
+});
+
+// フローティング進捗カード関数
+function toggleFloatingProgress() {
+    const details = document.getElementById('floatingProgressDetails');
+    const icon = document.getElementById('floatingToggleIcon');
+    const card = document.getElementById('floatingProgressCard');
+    
+    if (details.style.display === 'none' || !details.style.display) {
+        details.style.display = 'block';
+        icon.className = 'fas fa-chevron-down';
+        card.classList.add('expanded');
+    } else {
+        details.style.display = 'none';
+        icon.className = 'fas fa-chevron-up';
+        card.classList.remove('expanded');
+    }
+}
+
+async function updateFloatingProgress() {
+    if (window.progressManager) {
+        try {
+            const stats = await window.progressManager.getOverallStats();
+            
+            // メイン進捗情報
+            const progressPercentage = Math.round(stats.overallPercentage);
+            const progressTextElement = document.getElementById('floatingProgressText');
+            if (progressTextElement) {
+                progressTextElement.textContent = `${progressPercentage}% 完了`;
+            }
+            
+            // 統計数値
+            const completedItemsElement = document.getElementById('floatingCompletedItems');
+            const completedGoalsElement = document.getElementById('floatingCompletedGoals');
+            const totalItemsElement = document.getElementById('floatingTotalItems');
+            
+            if (completedItemsElement) completedItemsElement.textContent = stats.achievedIdentifiers || 0;
+            if (completedGoalsElement) completedGoalsElement.textContent = (stats.completedGoals || 0).toLocaleString();
+            if (totalItemsElement) totalItemsElement.textContent = stats.totalIdentifiers || 741;
+            
+            // プログレスバー更新
+            const progressFill = document.getElementById('floatingProgressFill');
+            if (progressFill) {
+                progressFill.style.width = progressPercentage + '%';
+            }
+            
+            // 達成バッジとモチベーション更新
+            updateFloatingAchievementBadge(progressPercentage);
+            updateFloatingMotivation(progressPercentage, stats.achievedIdentifiers || 0);
+        } catch (error) {
+            console.error('フローティング進捗カードの更新エラー:', error);
+        }
+    }
+}
+
+function updateFloatingAchievementBadge(percentage) {
+    const badge = document.getElementById('floatingAchievementBadge');
+    const badgeIcon = badge.querySelector('i');
+    
+    if (percentage >= 90) {
+        badgeIcon.className = 'fas fa-crown';
+        badge.style.background = 'linear-gradient(135deg, #ffd700, #ffb347)';
+    } else if (percentage >= 75) {
+        badgeIcon.className = 'fas fa-trophy';
+        badge.style.background = 'linear-gradient(135deg, #ff9800, #f57c00)';
+    } else if (percentage >= 50) {
+        badgeIcon.className = 'fas fa-star';
+        badge.style.background = 'linear-gradient(135deg, #4caf50, #388e3c)';
+    } else if (percentage >= 25) {
+        badgeIcon.className = 'fas fa-leaf';
+        badge.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+    } else {
+        badgeIcon.className = 'fas fa-seedling';
+        badge.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+    }
+}
+
+function updateFloatingMotivation(percentage, completedItems) {
+    const motivationElement = document.getElementById('floatingMotivation');
+    const motivationSpan = motivationElement.querySelector('span');
+    
+    let message = '';
+    let icon = 'fas fa-heart';
+    
+    if (percentage >= 90) {
+        message = `🎉 ${completedItems}項目完了！チャンピオンです！`;
+        icon = 'fas fa-crown';
+    } else if (percentage >= 75) {
+        message = `🏆 ${completedItems}項目完了！もうすぐゴール！`;
+        icon = 'fas fa-trophy';
+    } else if (percentage >= 50) {
+        message = `⭐ ${completedItems}項目完了！素晴らしい進歩！`;
+        icon = 'fas fa-star';
+    } else if (percentage >= 25) {
+        message = `🌿 ${completedItems}項目完了！順調です！`;
+        icon = 'fas fa-leaf';
+    } else if (completedItems > 0) {
+        message = `🌱 ${completedItems}項目完了！良いスタート！`;
+        icon = 'fas fa-seedling';
+    } else {
+        message = '学習の旅を始めましょう！';
+        icon = 'fas fa-heart';
+    }
+    
+    motivationElement.querySelector('i').className = icon;
+    motivationSpan.textContent = message;
+}
+
+// グローバル関数として公開
+window.updateProgressDashboard = updateProgressDashboard;
+window.updateFloatingProgress = updateFloatingProgress;
+
+// フローティング進捗の初期化
+setTimeout(() => {
+    updateFloatingProgress();
+    // 定期更新（5秒ごと）
+    setInterval(updateFloatingProgress, 5000);
+}, 1000);
+</script>
+
+
+{% endblock %}

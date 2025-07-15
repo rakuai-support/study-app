@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}【中学生版】AI学習アプリ（manabuwa）{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="{% if request.endpoint == 'index' %}homepage{% endif %}">
+    <a href="#main-content" class="skip-to-content">メインコンテンツにスキップ</a>
+    <header class="header" role="banner">
+        <div class="container">
+            <a href="{{ url_for('index') }}" style="text-decoration: none; color: inherit;">
+                <h1 class="logo">
+                    <i class="fas fa-graduation-cap"></i>
+                    中学生版-manabuwa
+                </h1>
+            </a>
+            <nav class="nav">
+                
+                <!-- 認証状態による表示切り替え -->
+                <div id="authNav">
+                    <!-- ログイン時の表示 -->
+                    <div id="loggedInNav" style="display: none;">
+                        <a href="{{ url_for('index') }}" class="nav-link">
+                            <i class="fas fa-home"></i> ホーム
+                        </a>
+                        <div class="user-info">
+                            <span class="user-email" id="userEmail"></span>
+                            <span class="usage-count" id="usageCount">0/30</span>
+                            <span class="premium-badge" id="premiumBadge" style="display: none;">プレミアム</span>
+                        </div>
+                        <button id="logoutBtn" class="logout-btn">
+                            <i class="fas fa-sign-out-alt"></i> ログアウト
+                        </button>
+                    </div>
+                    
+                    <!-- 未ログイン時の表示 -->
+                    <div id="notLoggedInNav">
+                        <a href="/login" class="nav-link">
+                            <i class="fas fa-sign-in-alt"></i> ログイン
+                        </a>
+                        <a href="/register" class="nav-link">
+                            <i class="fas fa-user-plus"></i> 新規登録
+                        </a>
+                    </div>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main-content" class="main" role="main">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 かわさき楽AIサポート. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <!-- 利用制限超過モーダル -->
+    <div id="usageLimitModal" class="usage-limit-modal">
+        <div class="usage-limit-content">
+            <button class="modal-close-btn" onclick="closeUsageLimitModal()">&times;</button>
+            <h3>🎁 無料利用回数を超過しました</h3>
+            <p>今月の無料利用回数（30回）に達しました。</p>
+            
+            <div class="upgrade-options">
+                <h4>🚀 プレミアム機能で継続利用</h4>
+                <ul>
+                    <li>✅ AI機能: 無制限利用</li>
+                    <li>✅ 優先サポート</li>
+                </ul>
+                
+                <div class="upgrade-buttons">
+                    <a href="https://your-website.com/premium" 
+                       class="upgrade-btn" target="_blank">
+                        🛒 プレミアム購入
+                    </a>
+                    <button class="upgrade-btn secondary" 
+                            onclick="showActivationForm()">
+                        🔑 認証コード入力
+                    </button>
+                </div>
+            </div>
+            
+            <div id="activationForm" class="activation-form" style="display: none;">
+                <h4>🔑 プレミアム認証</h4>
+                <p>決済完了後に送信された認証コードを入力してください。</p>
+                
+                <input type="text" id="activationCode" 
+                       placeholder="認証コードを入力" class="activation-input">
+                <button onclick="activatePremium()" class="upgrade-btn">認証</button>
+                
+                <div class="help-text">
+                    <p>認証コードが届かない場合は、
+                       <a href="admin@smilefactory-rakuai.com" target="_blank">サポート</a>
+                       までお問い合わせください。</p>
+                </div>
+            </div>
+            
+            <button class="upgrade-btn secondary" 
+                    onclick="closeUsageLimitModal()" style="margin-top: 1rem;">
+                閉じる
+            </button>
+        </div>
+    </div>
+
+    <!-- AIプロンプト実行モーダル -->
+    <div id="aiPromptModal" class="ai-modal">
+        <div class="ai-modal-content">
+            <div class="ai-modal-header">
+                <h3><i class="fas fa-robot"></i> AI アシスタント</h3>
+                <button class="modal-close" onclick="closeAiModal()">&times;</button>
+            </div>
+            <div class="ai-modal-body">
+                <div class="prompt-section">
+                    <label for="promptText">プロンプト:</label>
+                    <textarea id="promptText" class="prompt-textarea" rows="8" placeholder="AIに送信するプロンプトを確認・編集してください..."></textarea>
+                </div>
+                <div class="content-type-display">
+                    <span id="currentContentType" class="content-type-badge"></span>
+                </div>
+            </div>
+            <div class="ai-modal-footer">
+                <button id="executeAI" class="btn btn-primary btn-execute">
+                    <i class="fas fa-magic"></i> 実行
+                    <span class="loading-spinner" style="display: none;">
+                        <i class="fas fa-spinner fa-spin"></i>
+                    </span>
+                </button>
+            </div>
+            <div class="ai-result-section">
+                <div id="aiResult" class="ai-result"></div>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- フローティングAIアシスタント -->
+    <div id="floatingAiAssistant" class="floating-ai-assistant">
+        <button id="aiAssistantBtn" class="ai-assistant-btn" onclick="toggleAiAssistant()" 
+                aria-label="AI学習アシスタントを開く" tabindex="0">
+            <i class="fas fa-robot" aria-hidden="true"></i>
+        </button>
+        <div id="aiAssistantTooltip" class="ai-assistant-tooltip" role="tooltip">
+            AI学習アシスタント
+        </div>
+    </div>
+
+    <!-- AIアシスタントモーダル -->
+    <div id="aiAssistantModal" class="ai-assistant-modal">
+        <div class="ai-assistant-modal-content">
+            <div class="ai-assistant-header">
+                <h3><i class="fas fa-robot"></i> AI学習アシスタント</h3>
+                <button class="ai-assistant-close" onclick="closeAiAssistant()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="ai-assistant-body">
+                <div id="aiChatContainer" class="ai-chat-container">
+                    <div class="ai-chat-welcome">
+                        <div class="welcome-message">
+                            <i class="fas fa-graduation-cap"></i>
+                            <h4>こんにちは！AI学習アシスタントです</h4>
+                            <p id="contextMessage">学習に関することなら何でもお聞きください</p>
+                        </div>
+                    </div>
+                    <div id="aiChatMessages" class="ai-chat-messages">
+                        <!-- チャットメッセージがここに表示されます -->
+                    </div>
+                </div>
+                <div class="ai-chat-input-area">
+                    <div class="quick-questions" id="quickQuestions">
+                        <!-- コンテキストに応じたクイック質問 -->
+                    </div>
+                    <div class="ai-chat-input-wrapper">
+                        <textarea id="aiChatInput" placeholder="質問を入力してください..." class="ai-chat-input" rows="2"></textarea>
+                        <button id="aiChatSend" class="ai-chat-send-btn" onclick="sendAiMessage()">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 初回ユーザー向けチュートリアルモーダル -->
+    <div id="tutorialModal" class="tutorial-modal" role="dialog" aria-labelledby="tutorialTitle" aria-describedby="tutorialDesc">
+        <div class="tutorial-content">
+            <div class="tutorial-header">
+                <h3 id="tutorialTitle"><i class="fas fa-graduation-cap" aria-hidden="true"></i> ようこそ！学習アプリガイド</h3>
+                <button class="tutorial-close" onclick="window.closeTutorial()" aria-label="チュートリアルを閉じる">&times;</button>
+            </div>
+            <div class="tutorial-body">
+                <div class="tutorial-step active" data-step="1">
+                    <div class="tutorial-icon">
+                        <i class="fas fa-home"></i>
+                    </div>
+                    <h4>🎉 ようこそ！</h4>
+                    <p>学習指導要領アプリへようこそ！<br>
+                    あなた専用の学習の旅を始めましょう。</p>
+                    <div class="tutorial-features">
+                        <div class="feature-item">
+                            <i class="fas fa-chart-line"></i>
+                            <span>進捗管理</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-robot"></i>
+                            <span>AIアシスタント</span>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-star"></i>
+                            <span>達成感システム</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tutorial-step" data-step="2">
+                    <div class="tutorial-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h4>📊 進捗管理の使い方</h4>
+                    <p>各学習項目には3段階のゴールがあります：</p>
+                    <ul class="tutorial-list">
+                        <li><i class="fas fa-seedling"></i> <strong>初心者ゴール</strong> - 基礎から始めよう</li>
+                        <li><i class="fas fa-tree"></i> <strong>中級者ゴール</strong> - スキルアップ</li>
+                        <li><i class="fas fa-trophy"></i> <strong>上級者ゴール</strong> - マスターレベル</li>
+                    </ul>
+                    <p>チェックボックスをクリックして進捗を記録しましょう！</p>
+                </div>
+                
+                <div class="tutorial-step" data-step="3">
+                    <div class="tutorial-icon">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <h4>🤖 AIアシスタントの活用</h4>
+                    <p>右下のAIボタンで学習サポートを受けられます：</p>
+                    <ul class="tutorial-list">
+                        <li><i class="fas fa-question-circle"></i> 学習内容の質問</li>
+                        <li><i class="fas fa-lightbulb"></i> アイデアの提案</li>
+                        <li><i class="fas fa-magic"></i> コンテンツ制作支援</li>
+                    </ul>
+                    <p class="tutorial-note">💡 月30回まで無料でご利用いただけます</p>
+                </div>
+                
+                <div class="tutorial-step" data-step="4">
+                    <div class="tutorial-icon">
+                        <i class="fas fa-star"></i>
+                    </div>
+                    <h4>⭐ 達成感システム</h4>
+                    <p>学習を続けると素敵な演出が待っています：</p>
+                    <ul class="tutorial-list">
+                        <li><i class="fas fa-trophy"></i> マイルストーン達成演出</li>
+                        <li><i class="fas fa-medal"></i> バッジ・実績システム</li>
+                        <li><i class="fas fa-chart-bar"></i> 詳細な進捗統計</li>
+                    </ul>
+                    <p>あなたの頑張りをしっかりと記録します！</p>
+                </div>
+            </div>
+            <div class="tutorial-footer">
+                <div class="tutorial-progress">
+                    <div class="progress-dots">
+                        <span class="dot active" data-step="1" onclick="alert('ドット1クリック'); console.log('ドット1クリック');"></span>
+                        <span class="dot" data-step="2" onclick="alert('ドット2クリック'); console.log('ドット2クリック');"></span>
+                        <span class="dot" data-step="3" onclick="alert('ドット3クリック'); console.log('ドット3クリック');"></span>
+                        <span class="dot" data-step="4" onclick="alert('ドット4クリック'); console.log('ドット4クリック');"></span>
+                    </div>
+                </div>
+                <div class="tutorial-buttons">
+                    <button id="tutorialPrev" class="tutorial-btn secondary" onclick="alert('前へボタンクリック!'); console.log('前へボタンクリック!');" disabled>
+                        <i class="fas fa-chevron-left"></i> 前へ
+                    </button>
+                    <button id="tutorialNext" class="tutorial-btn primary" onclick="alert('次へボタンクリック!'); console.log('次へボタンクリック!'); document.querySelector('.tutorial-step.active').classList.remove('active'); document.querySelector('[data-step=\\'2\\']').classList.add('active');">
+                        次へ <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <button id="tutorialStart" class="tutorial-btn primary" onclick="alert('学習開始ボタンクリック!'); console.log('学習開始!');" style="display: none;">
+                        <i class="fas fa-rocket"></i> 学習を始める！
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 学習統計ダッシュボードモーダル -->
+    <div id="statisticsModal" class="statistics-modal">
+        <div class="statistics-content">
+            <div class="statistics-header">
+                <h3><i class="fas fa-chart-bar"></i> 学習統計ダッシュボード</h3>
+                <button class="statistics-close" onclick="closeStatistics()">&times;</button>
+            </div>
+            <div class="statistics-body">
+                <div class="stats-overview">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-trophy"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="totalAchieved">0</span>
+                            <span class="stat-label">達成項目数</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="totalGoalsCompleted">0</span>
+                            <span class="stat-label">完了ゴール数</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-calendar-check"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="studyStreak">0</span>
+                            <span class="stat-label">連続学習日数</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-fire"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-number" id="weeklyActivity">0</span>
+                            <span class="stat-label">今週の活動</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stats-charts">
+                    <div class="chart-section">
+                        <h4><i class="fas fa-chart-pie"></i> 教科別進捗</h4>
+                        <div class="subject-progress">
+                            <div class="subject-item" data-subject="国語">
+                                <span class="subject-name">国語</span>
+                                <div class="subject-bar">
+                                    <div class="subject-fill" style="width: 0%"></div>
+                                </div>
+                                <span class="subject-percent">0%</span>
+                            </div>
+                            <div class="subject-item" data-subject="算数">
+                                <span class="subject-name">算数</span>
+                                <div class="subject-bar">
+                                    <div class="subject-fill" style="width: 0%"></div>
+                                </div>
+                                <span class="subject-percent">0%</span>
+                            </div>
+                            <div class="subject-item" data-subject="理科">
+                                <span class="subject-name">理科</span>
+                                <div class="subject-bar">
+                                    <div class="subject-fill" style="width: 0%"></div>
+                                </div>
+                                <span class="subject-percent">0%</span>
+                            </div>
+                            <div class="subject-item" data-subject="社会">
+                                <span class="subject-name">社会</span>
+                                <div class="subject-bar">
+                                    <div class="subject-fill" style="width: 0%"></div>
+                                </div>
+                                <span class="subject-percent">0%</span>
+                            </div>
+                            <div class="subject-item" data-subject="英語">
+                                <span class="subject-name">英語</span>
+                                <div class="subject-bar">
+                                    <div class="subject-fill" style="width: 0%"></div>
+                                </div>
+                                <span class="subject-percent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-section">
+                        <h4><i class="fas fa-chart-line"></i> 最近の活動</h4>
+                        <div class="recent-activity">
+                            <div class="activity-timeline" id="activityTimeline">
+                                <!-- 活動履歴がここに表示されます -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stats-achievements">
+                    <h4><i class="fas fa-medal"></i> 実績・バッジ</h4>
+                    <div class="achievements-grid" id="achievementsGrid">
+                        <!-- 実績がここに表示されます -->
+                    </div>
+                </div>
+            </div>
+            <div class="statistics-footer">
+                <button class="stats-btn primary" onclick="exportProgress()">
+                    <i class="fas fa-download"></i> 進捗データをエクスポート
+                </button>
+                <button class="stats-btn secondary" onclick="closeStatistics()">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- フローティング進捗カード -->
+    <div id="floatingProgressCard" class="floating-progress-card">
+        <div class="floating-progress-content">
+            <div class="floating-progress-header">
+                <div class="floating-progress-icon">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="floating-progress-info">
+                    <span class="floating-progress-title">学習進捗</span>
+                    <span class="floating-progress-subtitle" id="floatingProgressText">0% 完了</span>
+                </div>
+                <button class="floating-progress-toggle" onclick="toggleFloatingProgress()">
+                    <i class="fas fa-chevron-up" id="floatingToggleIcon"></i>
+                </button>
+                <button class="floating-stats-btn" onclick="showStatistics()" title="詳細統計を表示">
+                    <i class="fas fa-chart-bar"></i>
+                </button>
+            </div>
+            
+            <div class="floating-progress-details" id="floatingProgressDetails" style="display: none;">
+                <div class="floating-progress-stats">
+                    <div class="floating-stat">
+                        <span class="floating-stat-number" id="floatingCompletedItems">0</span>
+                        <span class="floating-stat-label">完了項目</span>
+                    </div>
+                    <div class="floating-stat">
+                        <span class="floating-stat-number" id="floatingCompletedGoals">0</span>
+                        <span class="floating-stat-label">達成ゴール</span>
+                    </div>
+                    <div class="floating-stat">
+                        <span class="floating-stat-number" id="floatingTotalItems">741</span>
+                        <span class="floating-stat-label">総項目数</span>
+                    </div>
+                </div>
+                
+                <div class="floating-progress-bar-container">
+                    <div class="floating-progress-bar">
+                        <div class="floating-progress-fill" id="floatingProgressFill" style="width: 0%;"></div>
+                    </div>
+                    <div class="floating-achievement-badge" id="floatingAchievementBadge">
+                        <i class="fas fa-seedling"></i>
+                    </div>
+                </div>
+                
+                <div class="floating-motivation" id="floatingMotivation">
+                    <i class="fas fa-heart"></i>
+                    <span>学習の旅を始めましょう！</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // フローティング進捗カード関数（グローバルスコープ）
+    function toggleFloatingProgress() {
+        const details = document.getElementById('floatingProgressDetails');
+        const icon = document.getElementById('floatingToggleIcon');
+        const card = document.getElementById('floatingProgressCard');
+        
+        if (details && icon && card) {
+            if (details.style.display === 'none' || !details.style.display) {
+                details.style.display = 'block';
+                icon.className = 'fas fa-chevron-down';
+                card.classList.add('expanded');
+            } else {
+                details.style.display = 'none';
+                icon.className = 'fas fa-chevron-up';
+                card.classList.remove('expanded');
+            }
+        }
+    }
+
+    async function updateFloatingProgress() {
+        if (window.progressManager) {
+            try {
+                console.log('🔄 フローティング進捗カード更新開始');
+                console.log('progress-manager初期化状態:', !!window.progressManager);
+                console.log('ユーザーID:', window.progressManager.userId);
+                
+                const stats = await window.progressManager.getOverallStats();
+                console.log('統計データ:', stats);
+                
+                const progressPercentage = Math.round(stats.overallPercentage);
+                const progressTextElement = document.getElementById('floatingProgressText');
+                if (progressTextElement) {
+                    progressTextElement.textContent = `${progressPercentage}% 完了`;
+                    console.log('進捗率更新:', progressPercentage + '%');
+                }
+                
+                const completedItemsElement = document.getElementById('floatingCompletedItems');
+                const completedGoalsElement = document.getElementById('floatingCompletedGoals');
+                const totalItemsElement = document.getElementById('floatingTotalItems');
+                
+                if (completedItemsElement) completedItemsElement.textContent = stats.achievedIdentifiers || 0;
+                if (completedGoalsElement) completedGoalsElement.textContent = (stats.completedGoals || 0).toLocaleString();
+                if (totalItemsElement) totalItemsElement.textContent = stats.totalIdentifiers || 741;
+                
+                const progressFill = document.getElementById('floatingProgressFill');
+                if (progressFill) {
+                    progressFill.style.width = progressPercentage + '%';
+                }
+                
+                updateFloatingAchievementBadge(progressPercentage);
+                updateFloatingMotivation(progressPercentage, stats.achievedIdentifiers || 0);
+                
+                console.log('✅ フローティング進捗カード更新完了');
+            } catch (error) {
+                console.error('❌ フローティング進捗カードの更新エラー:', error);
+                console.error('エラー詳細:', error.stack);
+            }
+        } else {
+            console.warn('⚠️ progress-managerが初期化されていません');
+        }
+    }
+
+    function updateFloatingAchievementBadge(percentage) {
+        const badge = document.getElementById('floatingAchievementBadge');
+        if (!badge) return;
+        const badgeIcon = badge.querySelector('i');
+        if (!badgeIcon) return;
+        
+        if (percentage >= 90) {
+            badgeIcon.className = 'fas fa-crown';
+            badge.style.background = 'linear-gradient(135deg, #ffd700, #ffb347)';
+        } else if (percentage >= 75) {
+            badgeIcon.className = 'fas fa-trophy';
+            badge.style.background = 'linear-gradient(135deg, #ff9800, #f57c00)';
+        } else if (percentage >= 50) {
+            badgeIcon.className = 'fas fa-star';
+            badge.style.background = 'linear-gradient(135deg, #4caf50, #388e3c)';
+        } else if (percentage >= 25) {
+            badgeIcon.className = 'fas fa-leaf';
+            badge.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+        } else {
+            badgeIcon.className = 'fas fa-seedling';
+            badge.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+        }
+    }
+
+    function updateFloatingMotivation(percentage, completedItems) {
+        const motivationElement = document.getElementById('floatingMotivation');
+        if (!motivationElement) return;
+        const motivationSpan = motivationElement.querySelector('span');
+        if (!motivationSpan) return;
+        
+        let message = '';
+        let icon = 'fas fa-heart';
+        
+        if (percentage >= 90) {
+            message = `🎉 ${completedItems}項目完了！チャンピオンです！`;
+            icon = 'fas fa-crown';
+        } else if (percentage >= 75) {
+            message = `🏆 ${completedItems}項目完了！もうすぐゴール！`;
+            icon = 'fas fa-trophy';
+        } else if (percentage >= 50) {
+            message = `⭐ ${completedItems}項目完了！素晴らしい進歩！`;
+            icon = 'fas fa-star';
+        } else if (percentage >= 25) {
+            message = `🌿 ${completedItems}項目完了！順調です！`;
+            icon = 'fas fa-leaf';
+        } else if (completedItems > 0) {
+            message = `🌱 ${completedItems}項目完了！良いスタート！`;
+            icon = 'fas fa-seedling';
+        } else {
+            message = '学習の旅を始めましょう！';
+            icon = 'fas fa-heart';
+        }
+        
+        const iconElement = motivationElement.querySelector('i');
+        if (iconElement) iconElement.className = icon;
+        motivationSpan.textContent = message;
+    }
+
+    // グローバル関数として公開
+    window.updateFloatingProgress = updateFloatingProgress;
+
+    // 古いチュートリアル機能削除済み - script.jsを使用
+
+    // エラーモーダルを閉じる関数
+    function closeErrorModal() {
+        const modal = document.getElementById('errorModal');
+        if (modal) {
+            modal.classList.remove('show');
+            setTimeout(() => modal.remove(), 300);
+        }
+    }
+
+    // 統計ダッシュボード機能
+    function showStatistics() {
+        const modal = document.getElementById('statisticsModal');
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        updateStatisticsData();
+    }
+
+    function closeStatistics() {
+        const modal = document.getElementById('statisticsModal');
+        modal.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+
+    async function updateStatisticsData() {
+        if (!window.progressManager) return;
+
+        try {
+            const stats = await window.progressManager.getOverallStats();
+            
+            // 基本統計を更新
+            document.getElementById('totalAchieved').textContent = stats.achievedIdentifiers || 0;
+            document.getElementById('totalGoalsCompleted').textContent = (stats.completedGoals || 0).toLocaleString();
+            
+            // 学習streak計算（シンプル版）
+            const studyDays = localStorage.getItem('studyDays') || '[]';
+            const studyDaysArray = JSON.parse(studyDays);
+            const streak = calculateStudyStreak(studyDaysArray);
+            document.getElementById('studyStreak').textContent = streak;
+            
+            // 今週の活動
+            const thisWeekActivity = calculateWeeklyActivity(studyDaysArray);
+            document.getElementById('weeklyActivity').textContent = thisWeekActivity;
+            
+            // 教科別進捗を更新
+            await updateSubjectProgress();
+            
+            // 最近の活動を更新
+            updateRecentActivity();
+            
+            // 実績バッジを更新
+            updateAchievements(stats);
+            
+        } catch (error) {
+            console.error('統計データの更新エラー:', error);
+        }
+    }
+
+    function calculateStudyStreak(studyDays) {
+        if (!studyDays.length) return 0;
+        
+        const today = new Date().toDateString();
+        const sortedDays = studyDays.sort((a, b) => new Date(b) - new Date(a));
+        
+        let streak = 0;
+        let currentDate = new Date();
+        
+        for (let day of sortedDays) {
+            const dayDate = new Date(day).toDateString();
+            const currentDateString = currentDate.toDateString();
+            
+            if (dayDate === currentDateString) {
+                streak++;
+                currentDate.setDate(currentDate.getDate() - 1);
+            } else {
+                break;
+            }
+        }
+        
+        return streak;
+    }
+
+    function calculateWeeklyActivity(studyDays) {
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        
+        return studyDays.filter(day => new Date(day) >= oneWeekAgo).length;
+    }
+
+    async function updateSubjectProgress() {
+        const subjects = ['国語', '算数', '理科', '社会', '英語'];
+        
+        for (let subject of subjects) {
+            try {
+                const cards = document.querySelectorAll(`[data-subject="${subject}"]`);
+                let totalItems = 0;
+                let achievedItems = 0;
+                
+                cards.forEach(card => {
+                    totalItems++;
+                    const progressData = window.progressManager?.progressData;
+                    if (progressData) {
+                        const identifier = card.getAttribute('data-identifier');
+                        if (identifier && progressData[identifier]) {
+                            const progress = window.progressManager.getProgressForCard(identifier);
+                            if (progress.percentage > 50) {
+                                achievedItems++;
+                            }
+                        }
+                    }
+                });
+                
+                const percentage = totalItems > 0 ? Math.round((achievedItems / totalItems) * 100) : 0;
+                
+                const subjectItem = document.querySelector(`.subject-item[data-subject="${subject}"]`);
+                if (subjectItem) {
+                    const fill = subjectItem.querySelector('.subject-fill');
+                    const percent = subjectItem.querySelector('.subject-percent');
+                    
+                    if (fill) fill.style.width = percentage + '%';
+                    if (percent) percent.textContent = percentage + '%';
+                }
+            } catch (error) {
+                console.error(`${subject}の進捗更新エラー:`, error);
+            }
+        }
+    }
+
+    function updateRecentActivity() {
+        const timeline = document.getElementById('activityTimeline');
+        const activities = getRecentActivities();
+        
+        timeline.innerHTML = activities.map(activity => `
+            <div class="activity-item">
+                <div class="activity-icon">
+                    <i class="${activity.icon}"></i>
+                </div>
+                <div class="activity-content">
+                    <div class="activity-title">${activity.title}</div>
+                    <div class="activity-time">${activity.time}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function getRecentActivities() {
+        // ダミーデータ（実際にはlocalStorageやサーバーから取得）
+        return [
+            { icon: 'fas fa-check', title: '国語の項目を完了', time: '2時間前' },
+            { icon: 'fas fa-star', title: '算数で目標達成', time: '昨日' },
+            { icon: 'fas fa-trophy', title: '25%マイルストーン達成', time: '2日前' },
+            { icon: 'fas fa-graduation-cap', title: 'チュートリアル完了', time: '3日前' }
+        ];
+    }
+
+    function updateAchievements(stats) {
+        const grid = document.getElementById('achievementsGrid');
+        const achievements = [
+            { icon: '🌱', title: '学習開始', unlocked: stats.completedGoals > 0 },
+            { icon: '🎯', title: '初回達成', unlocked: stats.achievedIdentifiers > 0 },
+            { icon: '🔥', title: '継続学習', unlocked: calculateStudyStreak(JSON.parse(localStorage.getItem('studyDays') || '[]')) >= 3 },
+            { icon: '⭐', title: '25%達成', unlocked: stats.overallPercentage >= 25 },
+            { icon: '🌳', title: '50%達成', unlocked: stats.overallPercentage >= 50 },
+            { icon: '🏆', title: '75%達成', unlocked: stats.overallPercentage >= 75 },
+            { icon: '👑', title: '完全制覇', unlocked: stats.overallPercentage >= 100 },
+            { icon: '💎', title: 'パーフェクト', unlocked: stats.achievedIdentifiers >= 741 }
+        ];
+        
+        grid.innerHTML = achievements.map(achievement => `
+            <div class="achievement-badge ${achievement.unlocked ? 'unlocked' : ''}">
+                <span class="achievement-icon">${achievement.icon}</span>
+                <div class="achievement-title">${achievement.title}</div>
+            </div>
+        `).join('');
+    }
+
+    function exportProgress() {
+        if (!window.progressManager) {
+            alert('進捗データが見つかりません。');
+            return;
+        }
+        
+        const progressData = {
+            timestamp: new Date().toISOString(),
+            userId: window.progressManager.userId,
+            progress: window.progressManager.progressData,
+            studyDays: JSON.parse(localStorage.getItem('studyDays') || '[]')
+        };
+        
+        const blob = new Blob([JSON.stringify(progressData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `学習進捗_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // 学習日記録（進捗変更時に呼び出し）
+    function recordStudyDay() {
+        const today = new Date().toDateString();
+        const studyDays = JSON.parse(localStorage.getItem('studyDays') || '[]');
+        
+        if (!studyDays.includes(today)) {
+            studyDays.push(today);
+            localStorage.setItem('studyDays', JSON.stringify(studyDays));
+        }
+    }
+
+    // グローバル関数として公開
+    window.closeErrorModal = closeErrorModal;
+    window.showStatistics = showStatistics;
+    window.closeStatistics = closeStatistics;
+    window.exportProgress = exportProgress;
+    window.recordStudyDay = recordStudyDay;
+    // チュートリアル関数はscript.jsで定義済み
+
+    // フローティング進捗の初期化（最適化版）
+    document.addEventListener('DOMContentLoaded', function() {
+        // 登録・ログインページでは進捗管理とチュートリアルを無効化
+        const currentPath = window.location.pathname;
+        if (currentPath.includes('/register') || currentPath.includes('/login')) {
+            console.log('📝 登録・ログインページのため、フローティング進捗とチュートリアルを無効化します。');
+            return;
+        }
+
+        // 初回更新を少し遅らせて progress-manager の初期化を待つ
+        setTimeout(() => {
+            updateFloatingProgress();
+            // 30秒間隔に変更（頻度を削減）
+            setInterval(updateFloatingProgress, 30000);
+        }, 2000);
+        
+        // 進捗変更時の即座更新
+        document.addEventListener('change', function(event) {
+            if (event.target.classList.contains('progress-checkbox')) {
+                setTimeout(updateFloatingProgress, 500);
+            }
+        });
+        
+        // ページフォーカス時の更新
+        window.addEventListener('focus', function() {
+            updateFloatingProgress();
+        });
+
+        // チュートリアルの初期化
+        setTimeout(() => {
+            // 初回ユーザーかチェック
+            const tutorialCompleted = localStorage.getItem('tutorialCompleted');
+            const isHomePage = document.body.classList.contains('homepage');
+            
+            if (!tutorialCompleted && isHomePage) {
+                showTutorial();
+            }
+            
+            // チュートリアルボタンの初期化（必ず実行）
+            setupTutorialButtons();
+            
+        }, 1000);
+        
+        // チュートリアルボタンのセットアップ
+        function setupTutorialButtons() {
+            // ドットクリックイベント（onclickと重複しないように削除）
+            // document.querySelectorAll('.dot').forEach((dot, index) => {
+            //     dot.addEventListener('click', () => {
+            //         goToTutorialStep(index + 1);
+            //     });
+            // });
+            
+            console.log('チュートリアルボタンをセットアップしました');
+        }
+
+        // キーボードナビゲーション
+        document.addEventListener('keydown', function(event) {
+            // ESCキーでモーダルを閉じる
+            if (event.key === 'Escape') {
+                const tutorialModal = document.getElementById('tutorialModal');
+                const errorModal = document.getElementById('errorModal');
+                const aiModal = document.getElementById('aiAssistantModal');
+                
+                if (tutorialModal && tutorialModal.classList.contains('show')) {
+                    window.closeTutorial();
+                    event.preventDefault();
+                } else if (errorModal && errorModal.classList.contains('show')) {
+                    closeErrorModal();
+                    event.preventDefault();
+                } else if (aiModal && aiModal.style.display === 'flex') {
+                    closeAiAssistant();
+                    event.preventDefault();
+                }
+            }
+            
+            // チュートリアル内での矢印キーナビゲーション
+            if (document.getElementById('tutorialModal')?.classList.contains('show')) {
+                if (event.key === 'ArrowLeft') {
+                    previousTutorialStep();
+                    event.preventDefault();
+                } else if (event.key === 'ArrowRight') {
+                    nextTutorialStep();
+                    event.preventDefault();
+                }
+            }
+            
+            // AIアシスタント開くショートカット (Alt + A)
+            if (event.altKey && event.key === 'a') {
+                const aiBtn = document.getElementById('aiAssistantBtn');
+                if (aiBtn) {
+                    toggleAiAssistant();
+                    event.preventDefault();
+                }
+            }
+        });
+
+        // フォーカストラップ（モーダル内でのフォーカス制御）
+        function trapFocus(modal) {
+            const focusableElements = modal.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            );
+            const firstElement = focusableElements[0];
+            const lastElement = focusableElements[focusableElements.length - 1];
+
+            modal.addEventListener('keydown', function(e) {
+                if (e.key === 'Tab') {
+                    if (e.shiftKey) {
+                        if (document.activeElement === firstElement) {
+                            lastElement.focus();
+                            e.preventDefault();
+                        }
+                    } else {
+                        if (document.activeElement === lastElement) {
+                            firstElement.focus();
+                            e.preventDefault();
+                        }
+                    }
+                }
+            });
+        }
+    });
+    </script>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='auth-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='api-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='progress-manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='ai-assistant.js') }}"></script>
+</body>
+</html>
