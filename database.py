@@ -11,10 +11,16 @@ from dotenv import load_dotenv
 
 # psycopg v3のみを使用
 import psycopg
-from psycopg.pool import ConnectionPool
 from psycopg.rows import dict_row
 PSYCOPG_VERSION = 3
-print("[DB] INFO: Using psycopg v3")
+
+# ConnectionPoolのインポート（フォールバック付き）
+try:
+    from psycopg.pool import ConnectionPool
+    print("[DB] INFO: Using psycopg v3 with ConnectionPool")
+except ImportError:
+    print("[DB] WARNING: psycopg.pool not available, using direct connections")
+    ConnectionPool = None
 
 # 環境変数読み込み
 load_dotenv()
@@ -32,14 +38,19 @@ class DatabaseManager:
         database_url = os.getenv('DATABASE_URL')
         if database_url and 'postgresql://' in database_url:
             try:
-                # psycopg v3で接続プール作成
-                self.connection_pool = ConnectionPool(
-                    database_url,
-                    min_size=1,
-                    max_size=10,
-                    max_idle=300,
-                    max_lifetime=3600
-                )
+                # psycopg v3で接続プール作成（ConnectionPoolが利用可能な場合）
+                if ConnectionPool:
+                    self.connection_pool = ConnectionPool(
+                        database_url,
+                        min_size=1,
+                        max_size=10,
+                        max_idle=300,
+                        max_lifetime=3600
+                    )
+                else:
+                    # ConnectionPoolが利用できない場合は直接接続
+                    self.connection_pool = None
+                    self.database_url = database_url
                 
                 # 接続テスト
                 with self.get_connection() as conn:
@@ -69,11 +80,15 @@ class DatabaseManager:
     
     def get_connection(self):
         """データベース接続を取得"""
-        if self.connection_pool is None:
+        if self.connection_pool is None and self.db_type == 'postgresql':
             self._initialize_connection()
         
         if self.db_type == 'postgresql':
-            return self.connection_pool.connection()
+            if self.connection_pool:
+                return self.connection_pool.connection()
+            else:
+                # ConnectionPoolが利用できない場合は直接接続
+                return psycopg.connect(self.database_url)
         else:
             # SQLiteフォールバック
             import sqlite3
