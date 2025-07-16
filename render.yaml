@@ -2,8 +2,16 @@ services:
   - type: web
     name: study-app-junior
     env: python
-    buildCommand: apt-get update && apt-get install -y libpq-dev python3.11-dev && python3.11 -m pip install --upgrade pip && python3.11 -m pip install -r requirements.txt
-    startCommand: python3.11 -m gunicorn study_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --keepalive 5
+    buildCommand: |
+      apt-get update && apt-get install -y python3.11 python3.11-venv python3.11-dev
+      python3.11 -m venv /opt/render/project/src/.venv
+      source /opt/render/project/src/.venv/bin/activate
+      python3.11 -m pip install --upgrade pip
+      python3.11 -m pip install --no-cache-dir psycopg2-binary==2.9.5
+      python3.11 -m pip install --no-cache-dir -r requirements.txt
+    startCommand: |
+      source /opt/render/project/src/.venv/bin/activate
+      python3.11 -m gunicorn study_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --keepalive 5
     plan: free
     runtime: python-3.11.10
     envVars:
