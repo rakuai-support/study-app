@@ -332,15 +332,9 @@ def update_progress():
         
         # psycopg v3対応のデータベース操作
         with db_manager.get_connection() as conn:
-            from database import PSYCOPG_VERSION
-            if PSYCOPG_VERSION == 3:
-                with conn.cursor() as cursor:
-                    cursor.execute(sql, params)
-                    conn.commit()
-            else:
-                with conn.cursor() as cursor:
-                    cursor.execute(sql, params)
-                    conn.commit()
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params)
+                conn.commit()
 
         print("[DEBUG] Progress update successful.") # デバッグログ
         return jsonify({'success': True, 'message': '進捗を更新しました'})
@@ -662,21 +656,12 @@ def generate_activation_code():
         
         # psycopg v3対応のデータベース操作
         with db_manager.get_connection() as conn:
-            from database import PSYCOPG_VERSION
-            if PSYCOPG_VERSION == 3:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        INSERT INTO activation_codes (code, user_email, expires_at)
-                        VALUES (%s, %s, %s)
-                    """, (code, user_email, expires_at))
-                    conn.commit()
-            else:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        INSERT INTO activation_codes (code, user_email, expires_at)
-                        VALUES (%s, %s, %s)
-                    """, (code, user_email, expires_at))
-                    conn.commit()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO activation_codes (code, user_email, expires_at)
+                    VALUES (%s, %s, %s)
+                """, (code, user_email, expires_at))
+                conn.commit()
         
         return jsonify({
             'success': True,

@@ -9,19 +9,12 @@ import pandas as pd
 import json
 from dotenv import load_dotenv
 
-try:
-    import psycopg
-    from psycopg.pool import ConnectionPool
-    from psycopg.rows import dict_row
-    PSYCOPG_VERSION = 3
-    print("[DB] INFO: Using psycopg v3")
-except ImportError:
-    # フォールバック: psycopg2
-    import psycopg2 as psycopg
-    import psycopg2.extras
-    import psycopg2.pool
-    PSYCOPG_VERSION = 2
-    print("[DB] INFO: Using psycopg2 (fallback)")
+# psycopg v3のみを使用
+import psycopg
+from psycopg.pool import ConnectionPool
+from psycopg.rows import dict_row
+PSYCOPG_VERSION = 3
+print("[DB] INFO: Using psycopg v3")
 
 # 環境変数読み込み
 load_dotenv()
@@ -39,31 +32,20 @@ class DatabaseManager:
         database_url = os.getenv('DATABASE_URL')
         if database_url and 'postgresql://' in database_url:
             try:
-                if PSYCOPG_VERSION == 3:
-                    # psycopg v3の場合
-                    self.connection_pool = ConnectionPool(
-                        database_url,
-                        min_size=1,
-                        max_size=10,
-                        max_idle=300,
-                        max_lifetime=3600
-                    )
-                else:
-                    # psycopg2の場合（フォールバック）
-                    self.connection_pool = psycopg2.pool.SimpleConnectionPool(
-                        1, 10, database_url
-                    )
+                # psycopg v3で接続プール作成
+                self.connection_pool = ConnectionPool(
+                    database_url,
+                    min_size=1,
+                    max_size=10,
+                    max_idle=300,
+                    max_lifetime=3600
+                )
                 
                 # 接続テスト
                 with self.get_connection() as conn:
-                    if PSYCOPG_VERSION == 3:
-                        with conn.cursor() as cur:
-                            cur.execute("SELECT 1")
-                            cur.fetchone()
-                    else:
-                        with conn.cursor() as cur:
-                            cur.execute("SELECT 1")
-                            cur.fetchone()
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+                        cur.fetchone()
                 
                 self.db_type = 'postgresql'
                 print(f"[DB] SUCCESS: PostgreSQL connection pool created (psycopg v{PSYCOPG_VERSION})")
@@ -91,10 +73,7 @@ class DatabaseManager:
             self._initialize_connection()
         
         if self.db_type == 'postgresql':
-            if PSYCOPG_VERSION == 3:
-                return self.connection_pool.connection()
-            else:
-                return self.connection_pool.getconn()
+            return self.connection_pool.connection()
         else:
             # SQLiteフォールバック
             import sqlite3
@@ -104,34 +83,21 @@ class DatabaseManager:
     def return_connection(self, conn):
         """接続を返却"""
         if conn:
-            if self.db_type == 'postgresql' and PSYCOPG_VERSION == 2:
-                self.connection_pool.putconn(conn)
-            else:
-                conn.close()
+            conn.close()
     
     def execute_query(self, query, params=None):
         """クエリを実行"""
         with self.get_connection() as conn:
-            if PSYCOPG_VERSION == 3:
-                with conn.cursor(row_factory=dict_row) as cur:
-                    cur.execute(query, params)
-                    return cur.fetchall()
-            else:
-                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    cur.execute(query, params)
-                    return cur.fetchall()
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query, params)
+                return cur.fetchall()
     
     def execute_single(self, query, params=None):
         """単一行を実行"""
         with self.get_connection() as conn:
-            if PSYCOPG_VERSION == 3:
-                with conn.cursor(row_factory=dict_row) as cur:
-                    cur.execute(query, params)
-                    return cur.fetchone()
-            else:
-                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    cur.execute(query, params)
-                    return cur.fetchone()
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(query, params)
+                return cur.fetchone()
 
 # グローバルインスタンス
 db_manager = DatabaseManager()
@@ -144,14 +110,9 @@ def initialize_database():
     
     try:
         with db_manager.get_connection() as conn:
-            if PSYCOPG_VERSION == 3:
-                with conn.cursor() as cur:
-                    _create_tables_psycopg3(cur)
-                    conn.commit()
-            else:
-                with conn.cursor() as cur:
-                    _create_tables_psycopg2(cur)
-                    conn.commit()
+            with conn.cursor() as cur:
+                _create_tables_psycopg3(cur)
+                conn.commit()
         
         # 学習データの読み込み
         _load_learning_data()
@@ -220,9 +181,7 @@ def _create_tables_psycopg3(cur):
         )
     """)
 
-def _create_tables_psycopg2(cur):
-    """psycopg2でテーブル作成（フォールバック）"""
-    _create_tables_psycopg3(cur)  # 同じSQL文を使用
+# psycopg v3のみを使用するため、psycopg2関数は削除
 
 def _load_learning_data():
     """TSVファイルからデータを読み込み"""
@@ -234,14 +193,9 @@ def _load_learning_data():
         
         # 既存データを確認
         with db_manager.get_connection() as conn:
-            if PSYCOPG_VERSION == 3:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT COUNT(*) FROM learning_items")
-                    count = cur.fetchone()[0]
-            else:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT COUNT(*) FROM learning_items")
-                    count = cur.fetchone()[0]
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM learning_items")
+                count = cur.fetchone()[0]
         
         if count > 0:
             print(f"[DB] INFO: Learning items already loaded ({count} items)")
@@ -252,43 +206,23 @@ def _load_learning_data():
         
         # データベースに挿入
         with db_manager.get_connection() as conn:
-            if PSYCOPG_VERSION == 3:
-                with conn.cursor() as cur:
-                    for _, row in df.iterrows():
-                        cur.execute("""
-                            INSERT INTO learning_items 
-                            (identifier, learning_prompt, keywords, grade, subject, learning_objective, difficulty, content_types)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            row['identifier'],
-                            row['learningPromptData'],
-                            row['keywords'] if pd.notna(row['keywords']) else None,
-                            row['grade'] if pd.notna(row['grade']) else None,
-                            row['subject'] if pd.notna(row['subject']) else None,
-                            row['learningObjective'] if pd.notna(row['learningObjective']) else None,
-                            row['difficulty'] if pd.notna(row['difficulty']) else None,
-                            row['contentCreationPrompt']
-                        ))
-                    conn.commit()
-            else:
-                # psycopg2の場合も同様の処理
-                with conn.cursor() as cur:
-                    for _, row in df.iterrows():
-                        cur.execute("""
-                            INSERT INTO learning_items 
-                            (identifier, learning_prompt, keywords, grade, subject, learning_objective, difficulty, content_types)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            row['identifier'],
-                            row['learningPromptData'],
-                            row['keywords'] if pd.notna(row['keywords']) else None,
-                            row['grade'] if pd.notna(row['grade']) else None,
-                            row['subject'] if pd.notna(row['subject']) else None,
-                            row['learningObjective'] if pd.notna(row['learningObjective']) else None,
-                            row['difficulty'] if pd.notna(row['difficulty']) else None,
-                            row['contentCreationPrompt']
-                        ))
-                    conn.commit()
+            with conn.cursor() as cur:
+                for _, row in df.iterrows():
+                    cur.execute("""
+                        INSERT INTO learning_items 
+                        (identifier, learning_prompt, keywords, grade, subject, learning_objective, difficulty, content_types)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        row['identifier'],
+                        row['learningPromptData'],
+                        row['keywords'] if pd.notna(row['keywords']) else None,
+                        row['grade'] if pd.notna(row['grade']) else None,
+                        row['subject'] if pd.notna(row['subject']) else None,
+                        row['learningObjective'] if pd.notna(row['learningObjective']) else None,
+                        row['difficulty'] if pd.notna(row['difficulty']) else None,
+                        row['contentCreationPrompt']
+                    ))
+                conn.commit()
         
         print(f"[DB] SUCCESS: Loaded {len(df)} learning items")
         
