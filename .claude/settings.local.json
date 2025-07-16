@@ -15,7 +15,11 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git pull:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(mv:*)",
+      "Bash(del test_usage_limit_fix.py test_ai_endpoint.py test_gemini_api.py reset_usage.py)",
+      "Bash(ls:*)",
+      "Bash(git rm:*)"
     ],
     "deny": []
   }

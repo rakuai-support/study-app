@@ -150,6 +150,7 @@
         <div class="admin-tabs">
             <button class="tab-btn active" onclick="showTab('generate')">🎫 認証コード生成</button>
             <button class="tab-btn" onclick="showTab('revoke')">❌ プレミアム解除</button>
+            <button class="tab-btn" onclick="showTab('stats')">📊 使用量統計</button>
         </div>
         
         <!-- 認証コード生成タブ -->
@@ -206,6 +207,34 @@
                     ❌ プレミアム解除
                 </button>
             </form>
+        </div>
+
+        <!-- 使用量統計タブ -->
+        <div id="statsTab" class="tab-content">
+            <div class="form-group">
+                <label for="statsAdminKey">管理者キー</label>
+                <input type="password" id="statsAdminKey" value="admin123" required>
+            </div>
+            
+            <button type="button" class="generate-btn" onclick="loadUsageStats()">
+                📊 使用量統計を取得
+            </button>
+            
+            <div id="statsResult" style="margin-top: 2rem; display: none;">
+                <div style="background: rgba(102, 126, 234, 0.1); padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem;">
+                    <h3 style="margin: 0 0 1rem 0; color: #667eea;">📈 統計サマリー</h3>
+                    <div id="statsOverview" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
+                        <!-- 統計情報がここに表示される -->
+                    </div>
+                </div>
+                
+                <div style="background: white; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden;">
+                    <h3 style="background: #f5f5f5; margin: 0; padding: 1rem; color: #333;">👥 ユーザー詳細</h3>
+                    <div id="usersList" style="max-height: 400px; overflow-y: auto;">
+                        <!-- ユーザーリストがここに表示される -->
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div id="result" class="result">
@@ -336,6 +365,88 @@
                 resultDiv.style.display = 'block';
             }
         });
+
+        // 使用量統計読み込み機能
+        async function loadUsageStats() {
+            const adminKey = document.getElementById('statsAdminKey').value;
+            const statsResult = document.getElementById('statsResult');
+            const statsOverview = document.getElementById('statsOverview');
+            const usersList = document.getElementById('usersList');
+            
+            try {
+                const response = await fetch('/api/usage-stats', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        admin_key: adminKey
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const stats = data.statistics;
+                    
+                    // 統計サマリー表示
+                    statsOverview.innerHTML = `
+                        <div style="text-align: center; padding: 1rem; background: white; border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: #667eea;">${stats.total_users}</div>
+                            <div style="color: #666;">総ユーザー数</div>
+                        </div>
+                        <div style="text-align: center; padding: 1rem; background: white; border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: #4CAF50;">${stats.premium_users}</div>
+                            <div style="color: #666;">プレミアム</div>
+                        </div>
+                        <div style="text-align: center; padding: 1rem; background: white; border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: #FF9800;">${stats.free_users}</div>
+                            <div style="color: #666;">無料ユーザー</div>
+                        </div>
+                        <div style="text-align: center; padding: 1rem; background: white; border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: #9C27B0;">${stats.total_usage}</div>
+                            <div style="color: #666;">総使用回数</div>
+                        </div>
+                        <div style="text-align: center; padding: 1rem; background: white; border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: #607D8B;">${stats.average_usage}</div>
+                            <div style="color: #666;">平均使用回数</div>
+                        </div>
+                    `;
+                    
+                    // ユーザーリスト表示
+                    usersList.innerHTML = data.users.map(user => `
+                        <div style="padding: 1rem; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-weight: 500; margin-bottom: 0.25rem;">${user.email}</div>
+                                <div style="font-size: 0.9rem; color: #666;">
+                                    登録: ${new Date(user.created_at).toLocaleDateString('ja-JP')}
+                                    ${user.last_reset_date ? ` | リセット: ${new Date(user.last_reset_date).toLocaleDateString('ja-JP')}` : ''}
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="display: flex; align-items: center; gap: 1rem;">
+                                    <span style="background: ${user.is_premium ? '#4CAF50' : '#FF9800'}; color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem;">
+                                        ${user.is_premium ? 'プレミアム' : '無料'}
+                                    </span>
+                                    <div style="font-size: 1.1rem; font-weight: bold; color: #333;">
+                                        ${user.free_usage_count} ${user.is_premium ? '' : '/ 30'}
+                                    </div>
+                                </div>
+                                ${user.premium_expires_at ? `<div style="font-size: 0.8rem; color: #666; margin-top: 0.25rem;">期限: ${new Date(user.premium_expires_at).toLocaleDateString('ja-JP')}</div>` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    statsResult.style.display = 'block';
+                    
+                } else {
+                    alert('エラー: ' + data.error);
+                }
+                
+            } catch (error) {
+                alert('通信エラー: ' + error.message);
+            }
+        }
     </script>
 </body>
 </html>

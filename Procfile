@@ -1,1 +1,1 @@
-web: gunicorn study_app:app
+web: gunicorn study_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --keepalive 5

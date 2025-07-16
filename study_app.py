@@ -1,12 +1,14 @@
 import pandas as pd
 import json
-import sqlite3
+import psycopg2
+import psycopg2.extras
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 import os
 import google.generativeai as genai
 from datetime import datetime
 from auth import User, get_current_user, login_required
 from dotenv import load_dotenv
+from database import db_manager, initialize_database
 
 # 環境変数を読み込み（開発環境用）
 load_dotenv()
@@ -26,145 +28,93 @@ else:
 ADMIN_KEY = os.environ.get('ADMIN_KEY', 'admin123')
 print("[STARTUP] SUCCESS: ADMIN_KEY configured")
 
-# ===== 追加: 全リクエストをログに記録するデバッグコード =====
+# ===== 追加: 重要なリクエストのみログに記録するデバッグコード =====
 @app.before_request
 def log_request_info():
     try:
-        print('-----------------------------------------------------')
-        print(f"[REQUEST LOG] Path: {request.path}")
-        print(f"[REQUEST LOG] Method: {request.method}")
-        print(f"[REQUEST LOG] Headers: {dict(request.headers)}")
-        # POSTなどのボディを持つリクエストの場合、中身をログに出力
-        if request.method in ['POST', 'PUT'] and request.get_data():
-            # get_data()はbytesを返すので、デコードを試みる
-            try:
-                print(f"[REQUEST LOG] Body: {request.get_data(as_text=True)}")
-            except UnicodeDecodeError:
-                print("[REQUEST LOG] Body: (Could not decode as text)")
-        print('-----------------------------------------------------')
+        # 重要なAPI エンドポイントのみログ出力
+        important_paths = ['/api/ai-generate', '/api/activate-premium', '/api/progress/update', '/login', '/register']
+        
+        if any(request.path.startswith(path) for path in important_paths):
+            print('-----------------------------------------------------')
+            print(f"[REQUEST LOG] Path: {request.path}")
+            print(f"[REQUEST LOG] Method: {request.method}")
+            # POSTなどのボディを持つリクエストの場合、中身をログに出力
+            if request.method in ['POST', 'PUT'] and request.get_data():
+                try:
+                    print(f"[REQUEST LOG] Body: {request.get_data(as_text=True)}")
+                except UnicodeDecodeError:
+                    print("[REQUEST LOG] Body: (Could not decode as text)")
+            print('-----------------------------------------------------')
     except Exception as e:
         print(f"[REQUEST LOG] Error in logging middleware: {e}")
 # ===== ここまで =====
 
-# ===== データベース初期化関数 =====
-def initialize_database():
-    """アプリ起動時にデータベースを初期化"""
-    db_path = 'study_app.db'
-    
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # 既存テーブルの確認
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        existing_tables = [table[0] for table in cursor.fetchall()]
-        
-        # usersテーブルを作成（既存データベースと互換性を保つ）
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            is_premium INTEGER DEFAULT 0,
-            premium_expires_at TEXT,
-            free_usage_count INTEGER DEFAULT 0,
-            last_reset_date TEXT DEFAULT (date('now')),
-            created_at TEXT DEFAULT (datetime('now'))
-        )
-        """)
-        
-        # activation_codesテーブルを作成
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS activation_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE NOT NULL,
-            user_email TEXT NOT NULL,
-            is_used INTEGER DEFAULT 0,
-            expires_at TEXT NOT NULL,
-            created_at TEXT DEFAULT (datetime('now'))
-        )
-        """)
-        
-        # progressテーブルを作成
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS progress (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            identifier TEXT NOT NULL,
-            progress_data TEXT NOT NULL,
-            updated_at TEXT DEFAULT (datetime('now')),
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-        """)
-        
-        # learning_itemsテーブルは既存の構造をそのまま使用
-        if 'learning_items' not in existing_tables:
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS learning_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                identifier TEXT UNIQUE NOT NULL,
-                learningPromptData TEXT NOT NULL,
-                contentCreationPrompt TEXT NOT NULL
-            )
-            """)
-        
-        # インデックス作成（エラーを無視）
-        try:
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_progress_user_identifier ON progress(user_id, identifier)")
-        except:
-            pass
-        
-        conn.commit()
-        print("[STARTUP] SUCCESS: Database tables initialized")
-        
-        # データ確認
-        cursor.execute("SELECT COUNT(*) FROM learning_items")
-        count = cursor.fetchone()[0]
-        print(f"[STARTUP] INFO: Database contains {count} learning items")
-            
-    except Exception as e:
-        print(f"[STARTUP] ERROR: Database initialization failed: {e}")
-    finally:
-        if conn:
-            conn.close()
-
-def import_tsv_data(cursor):
-    """TSVファイルからデータをインポート"""
-    try:
-        tsv_file = 'learning_data.tsv'
-        if os.path.exists(tsv_file):
-            df = pd.read_csv(tsv_file, sep='\t')
-            for _, row in df.iterrows():
-                cursor.execute(
-                    'INSERT OR IGNORE INTO learning_items (identifier, learningPromptData, contentCreationPrompt) VALUES (?, ?, ?)',
-                    (row['identifier'], row['learningPromptData'], row['contentCreationPrompt'])
-                )
-        else:
-            print(f"[STARTUP] WARNING: TSV file not found: {tsv_file}")
-    except Exception as e:
-        print(f"[STARTUP] ERROR: TSV import failed: {e}")
-
-# ===== ここまで =====
+# ===== データベース初期化（新しいdatabase.pyモジュールを使用） =====
 
 
 class StudyDataViewer:
-    def __init__(self, db_file_path):
-        self.db_file_path = db_file_path
+    def __init__(self):
         self.data = None
+        self._cached_stats = None  # 統計情報のキャッシュ
         self.load_data()
 
     def load_data(self):
-        """SQLiteデータベースからデータを読み込み、identifierで昇順にソートして格納"""
+        """PostgreSQLデータベースからデータを読み込み、identifierで昇順にソートして格納"""
         try:
-            conn = sqlite3.connect(self.db_file_path)
+            conn = db_manager.get_connection()
             # データベースからデータをpandas DataFrameに読み込み、identifierで昇順ソート
             self.data = pd.read_sql_query("SELECT * FROM learning_items ORDER BY identifier ASC", conn)
-            conn.close()
+            db_manager.return_connection(conn)
             print(f"データベースからデータを正常に読み込みました。行数: {len(self.data)}")
+            # データ読み込み時に統計情報もキャッシュ
+            self._calculate_stats_cache()
         except Exception as e:
             print(f"データベース読み込みエラー: {e}")
             self.data = None
+            self._cached_stats = None
+    
+    def _calculate_stats_cache(self):
+        """統計情報を計算してキャッシュに保存（起動時の1回のみ実行）"""
+        if self.data is None:
+            self._cached_stats = None
+            return
+        
+        try:
+            total_identifiers = len(self.data)
+            total_goals = 0
+            error_count = 0
+            
+            print(f"[STARTUP] 統計情報キャッシュを計算中... ({total_identifiers}項目)")
+            
+            # 各項目のゴール数を計算
+            for _, row in self.data.iterrows():
+                try:
+                    content_data = json.loads(row['content_types'])  # 正しいカラム名
+                    progress_tracking = content_data.get('progressTracking', {})
+                    
+                    beginner_goals = len(progress_tracking.get('beginnerGoals', []))
+                    intermediate_goals = len(progress_tracking.get('intermediateGoals', []))
+                    advanced_goals = len(progress_tracking.get('advancedGoals', []))
+                    
+                    total_goals += beginner_goals + intermediate_goals + advanced_goals
+                    
+                except (json.JSONDecodeError, KeyError) as e:
+                    error_count += 1
+                    if error_count <= 3:  # 最初の3件のみログ出力
+                        print(f"[STARTUP] データ解析エラー (ID: {row.get('identifier', 'unknown')}): {e}")
+                    continue
+            
+            self._cached_stats = {
+                'totalIdentifiers': total_identifiers,
+                'totalGoals': total_goals,
+                'errorCount': error_count
+            }
+            print(f"[STARTUP] 統計キャッシュ完了: {total_identifiers}項目, {total_goals}ゴール (エラー: {error_count}件)")
+            
+        except Exception as e:
+            print(f"[STARTUP] 統計計算エラー: {e}")
+            self._cached_stats = None
     
     def get_identifiers(self):
         """利用可能な識別子のリストを取得"""
@@ -235,15 +185,12 @@ class StudyDataViewer:
             print(f"データ解析エラー (ID: {identifier}): {e}")
             return None
 
-# アプリ起動時にデータベースを初期化（既存DBファイルがある場合はスキップ）
-if not os.path.exists('study_app.db') or os.path.getsize('study_app.db') < 1000:
-    print("[STARTUP] INFO: Initializing new database...")
-    initialize_database()
-else:
-    print("[STARTUP] INFO: Using existing database file")
+# PostgreSQLデータベースを初期化
+print("[STARTUP] INFO: Initializing PostgreSQL database...")
+initialize_database()
 
 # グローバルインスタンス
-viewer = StudyDataViewer('study_app.db')
+viewer = StudyDataViewer()
 
 @app.route('/')
 def index():
@@ -314,34 +261,27 @@ def test_api_key():
 
 @app.route('/api/progress-stats', methods=['GET'])
 def get_progress_stats():
-    """全ての学習項目の進捗統計情報を取得"""
+    """全ての学習項目の進捗統計情報を取得（キャッシュ使用）"""
     try:
+        # キャッシュが存在する場合はそれを返す
+        if viewer._cached_stats:
+            return jsonify({
+                'success': True,
+                'totalIdentifiers': viewer._cached_stats['totalIdentifiers'],
+                'totalGoals': viewer._cached_stats['totalGoals'],
+                'cached': True  # キャッシュ使用であることを示す
+            })
+        
+        # キャッシュが無い場合（エラー時のフォールバック）
         if viewer.data is None:
             return jsonify({'success': False, 'error': 'データが読み込まれていません'}), 500
         
-        total_identifiers = len(viewer.data)
-        total_goals = 0
-        
-        # 各項目のゴール数を計算
-        for _, row in viewer.data.iterrows():
-            try:
-                content_data = json.loads(row['contentCreationPrompt'])
-                progress_tracking = content_data.get('progressTracking', {})
-                
-                beginner_goals = len(progress_tracking.get('beginnerGoals', []))
-                intermediate_goals = len(progress_tracking.get('intermediateGoals', []))
-                advanced_goals = len(progress_tracking.get('advancedGoals', []))
-                
-                total_goals += beginner_goals + intermediate_goals + advanced_goals
-                
-            except (json.JSONDecodeError, KeyError) as e:
-                print(f"進捗データ解析エラー (ID: {row.get('identifier', 'unknown')}): {e}")
-                continue
-        
+        print("[WARNING] 統計キャッシュが無いため、フォールバック処理を実行")
         return jsonify({
             'success': True,
-            'totalIdentifiers': total_identifiers,
-            'totalGoals': total_goals
+            'totalIdentifiers': len(viewer.data),
+            'totalGoals': 0,  # フォールバック時は簡易計算
+            'cached': False
         })
         
     except Exception as e:
@@ -352,28 +292,31 @@ def get_progress_stats():
 @app.route('/api/progress/<user_id>', methods=['GET'])
 def get_progress(user_id):
     """指定されたユーザーの進捗データを取得"""
+    conn = None
     try:
-        conn = sqlite3.connect(viewer.db_file_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        conn = db_manager.get_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
-        cursor.execute("SELECT * FROM progress WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT * FROM progress WHERE user_id = %s", (user_id,))
         rows = cursor.fetchall()
         
         progress_data = [dict(row) for row in rows]
-        
-        conn.close()
+        cursor.close()
         
         return jsonify({'success': True, 'progress': progress_data})
         
     except Exception as e:
         print(f"進捗データ取得エラー: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        if conn:
+            db_manager.return_connection(conn)
 
 
 @app.route('/api/progress/update', methods=['POST'])
 def update_progress():
     """進捗データを更新（保存）"""
+    conn = None
     try:
         data = request.get_json()
         print(f"[DEBUG] /api/progress/update received: {data}") # デバッグログ
@@ -388,46 +331,120 @@ def update_progress():
             print(f"[DEBUG] Parameter validation failed for: {data}") # デバッグログ
             return jsonify({'success': False, 'error': '必要なパラメータが不足しています'}), 400
 
-        conn = sqlite3.connect(viewer.db_file_path)
+        conn = db_manager.get_connection()
         cursor = conn.cursor()
 
+        # PostgreSQL用UPSERT構文
         sql = """
             INSERT INTO progress (user_id, item_identifier, level, goal_index, completed, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, item_identifier, level, goal_index) 
-            DO UPDATE SET completed = excluded.completed, updated_at = excluded.updated_at
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, item_identifier, level, goal_index) 
+            DO UPDATE SET completed = EXCLUDED.completed, updated_at = EXCLUDED.updated_at
         """
-        params = (user_id, item_identifier, level, goal_index, 1 if completed else 0, datetime.now().isoformat())
+        params = (user_id, item_identifier, level, goal_index, completed, datetime.now())
         
         print(f"[DEBUG] Executing SQL: {sql} with params {params}") # デバッグログ
         cursor.execute(sql, params)
 
         conn.commit()
-        conn.close()
+        cursor.close()
 
         print("[DEBUG] Progress update successful.") # デバッグログ
         return jsonify({'success': True, 'message': '進捗を更新しました'})
 
     except Exception as e:
+        if conn:
+            conn.rollback()
         import traceback
         print(f"[ERROR] Progress update failed: {e}")
         traceback.print_exc() # スタックトレースをコンソールに出力
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+    finally:
+        if conn:
+            db_manager.return_connection(conn)
 
+
+@app.route('/api/debug/session', methods=['GET'])
+def debug_session():
+    """セッション情報のデバッグ"""
+    try:
+        print("[DEBUG] debug_session endpoint called")  # コンソールログ
+        user = get_current_user()
+        print(f"[DEBUG] Current user in debug: {user}")  # コンソールログ
+        return jsonify({
+            'session_user_id': session.get('user_id'),
+            'user_found': user is not None,
+            'user_email': user.email if user else None,
+            'user_id': user.id if user else None,
+            'is_premium': user.is_premium if user else None,
+            'usage_count': user.free_usage_count if user else None
+        })
+    except Exception as e:
+        print(f"[DEBUG] Error in debug_session: {e}")  # コンソールログ
+        return jsonify({'error': str(e)})
+
+@app.route('/api/test-log', methods=['GET'])
+def test_log():
+    """ログテスト用"""
+    import sys
+    print("TEST LOG: This message should appear in console", flush=True)
+    sys.stdout.flush()
+    app.logger.info("APP LOGGER: This is from Flask logger")
+    return jsonify({'message': 'Check console for log message', 'timestamp': datetime.now().isoformat()})
+
+@app.route('/api/ai-generate-test', methods=['POST'])
+def ai_generate_test():
+    """AI APIテスト版（認証なし・デバッグ用）"""
+    print(f"[DEBUG] AI TEST API called - Request data: {request.get_json()}")
+    try:
+        data = request.get_json()
+        prompt = data.get('prompt', 'テストプロンプト')
+        
+        # APIキー確認
+        if not GEMINI_API_KEY:
+            print("[ERROR] GEMINI_API_KEY is not set")
+            return jsonify({'success': False, 'error': 'APIキーが設定されていません'}), 500
+        
+        # Gemini API実行
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        
+        if response and response.text:
+            return jsonify({
+                'success': True,
+                'result': response.text,
+                'debug': 'Test API successful'
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Empty response'}), 500
+            
+    except Exception as e:
+        print(f"[ERROR] AI Test Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/ai-generate', methods=['POST'])
 @login_required
 def ai_generate():
     """AIプロンプトを実行して結果を取得（利用制限付き）"""
     print(f"[DEBUG] AI API called - Request data: {request.get_json()}")
+    print(f"[DEBUG] Session user_id: {session.get('user_id')}")
     try:
         # 現在のユーザーを取得
         user = get_current_user()
+        print(f"[DEBUG] Current user: {user}")
         if not user:
+            print("[DEBUG] No user found in session")
             return jsonify({'success': False, 'error': 'ログインが必要です'}), 401
         
+        print(f"[DEBUG] User found: {user.email}, Premium: {user.is_premium}, Usage: {user.free_usage_count}/30")
+        
         # 利用制限チェック
-        if not user.check_usage_limit():
+        usage_check = user.check_usage_limit()
+        print(f"[DEBUG] Usage limit check result: {usage_check}")
+        if not usage_check:
             return jsonify({
                 'success': False,
                 'error': 'USAGE_LIMIT_EXCEEDED',
@@ -656,16 +673,17 @@ def generate_activation_code():
         expires_at = (datetime.now() + timedelta(days=expires_days)).isoformat()
         
         # データベースに保存
-        conn = sqlite3.connect('study_app.db')
+        conn = db_manager.get_connection()
         cursor = conn.cursor()
         
         cursor.execute("""
             INSERT INTO activation_codes (code, user_email, expires_at)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
         """, (code, user_email, expires_at))
         
         conn.commit()
-        conn.close()
+        cursor.close()
+        db_manager.return_connection(conn)
         
         return jsonify({
             'success': True,
@@ -678,6 +696,60 @@ def generate_activation_code():
     except Exception as e:
         print(f"認証コード生成エラー: {e}")
         return jsonify({'success': False, 'error': '認証コード生成に失敗しました'}), 500
+
+@app.route('/api/usage-stats', methods=['POST'])
+def get_usage_stats():
+    """管理者用：ユーザー使用量統計取得"""
+    data = request.get_json()
+    admin_key = data.get('admin_key')
+    
+    # 管理者認証
+    if admin_key != ADMIN_KEY:
+        return jsonify({'success': False, 'error': '管理者権限が必要です'}), 403
+    
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # 全ユーザーの使用量統計を取得
+        cursor.execute("""
+            SELECT 
+                email,
+                is_premium,
+                free_usage_count,
+                premium_expires_at,
+                last_reset_date,
+                created_at
+            FROM users 
+            ORDER BY free_usage_count DESC, created_at DESC
+        """)
+        users = cursor.fetchall()
+        
+        # 統計情報を計算
+        total_users = len(users)
+        premium_users = sum(1 for user in users if user['is_premium'])
+        free_users = total_users - premium_users
+        total_usage = sum(user['free_usage_count'] for user in users)
+        avg_usage = total_usage / total_users if total_users > 0 else 0
+        
+        cursor.close()
+        db_manager.return_connection(conn)
+        
+        return jsonify({
+            'success': True,
+            'statistics': {
+                'total_users': total_users,
+                'premium_users': premium_users,
+                'free_users': free_users,
+                'total_usage': total_usage,
+                'average_usage': round(avg_usage, 1)
+            },
+            'users': [dict(user) for user in users]
+        })
+        
+    except Exception as e:
+        print(f"使用量統計取得エラー: {e}")
+        return jsonify({'success': False, 'error': '統計取得に失敗しました'}), 500
 
 @app.route('/api/revoke-premium', methods=['POST'])
 def revoke_premium():
@@ -734,4 +806,4 @@ def activate_premium():
         return jsonify({'success': False, 'error': '認証コードが無効または期限切れです'}), 400
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
