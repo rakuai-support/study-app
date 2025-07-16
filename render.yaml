@@ -2,13 +2,15 @@ services:
   - type: web
     name: study-app-junior
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn study_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --keepalive 5
+    buildCommand: apt-get update && apt-get install -y libpq-dev python3.11-dev && python3.11 -m pip install --upgrade pip && python3.11 -m pip install -r requirements.txt
+    startCommand: python3.11 -m gunicorn study_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --keepalive 5
     plan: free
     runtime: python-3.11.10
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.10
+      - key: PYTHONPATH
+        value: /opt/render/project/src
       - key: DATABASE_URL
         sync: false
       - key: GEMINI_API_KEY
