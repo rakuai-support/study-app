@@ -1,7 +1,5 @@
 import pandas as pd
 import json
-import psycopg2
-import psycopg2.extras
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 import os
 import google.generativeai as genai
@@ -62,10 +60,11 @@ class StudyDataViewer:
     def load_data(self):
         """PostgreSQLデータベースからデータを読み込み、identifierで昇順にソートして格納"""
         try:
-            conn = db_manager.get_connection()
-            # データベースからデータをpandas DataFrameに読み込み、identifierで昇順ソート
-            self.data = pd.read_sql_query("SELECT * FROM learning_items ORDER BY identifier ASC", conn)
-            db_manager.return_connection(conn)
+            # psycopg v3対応のデータベース操作
+            with db_manager.get_connection() as conn:
+                # データベースからデータをpandas DataFrameに読み込み、identifierで昇順ソート
+                self.data = pd.read_sql_query("SELECT * FROM learning_items ORDER BY identifier ASC", conn)
+            
             print(f"データベースからデータを正常に読み込みました。行数: {len(self.data)}")
             # データ読み込み時に統計情報もキャッシュ
             self._calculate_stats_cache()
@@ -292,31 +291,20 @@ def get_progress_stats():
 @app.route('/api/progress/<user_id>', methods=['GET'])
 def get_progress(user_id):
     """指定されたユーザーの進捗データを取得"""
-    conn = None
     try:
-        conn = db_manager.get_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        progress_data = db_manager.execute_query("SELECT * FROM progress WHERE user_id = %s", (user_id,))
         
-        cursor.execute("SELECT * FROM progress WHERE user_id = %s", (user_id,))
-        rows = cursor.fetchall()
-        
-        progress_data = [dict(row) for row in rows]
-        cursor.close()
-        
+        # psycopg v3では辞書型として返される
         return jsonify({'success': True, 'progress': progress_data})
         
     except Exception as e:
         print(f"進捗データ取得エラー: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
-    finally:
-        if conn:
-            db_manager.return_connection(conn)
 
 
 @app.route('/api/progress/update', methods=['POST'])
 def update_progress():
     """進捗データを更新（保存）"""
-    conn = None
     try:
         data = request.get_json()
         print(f"[DEBUG] /api/progress/update received: {data}") # デバッグログ
@@ -331,9 +319,6 @@ def update_progress():
             print(f"[DEBUG] Parameter validation failed for: {data}") # デバッグログ
             return jsonify({'success': False, 'error': '必要なパラメータが不足しています'}), 400
 
-        conn = db_manager.get_connection()
-        cursor = conn.cursor()
-
         # PostgreSQL用UPSERT構文
         sql = """
             INSERT INTO progress (user_id, item_identifier, level, goal_index, completed, updated_at)
@@ -344,24 +329,27 @@ def update_progress():
         params = (user_id, item_identifier, level, goal_index, completed, datetime.now())
         
         print(f"[DEBUG] Executing SQL: {sql} with params {params}") # デバッグログ
-        cursor.execute(sql, params)
-
-        conn.commit()
-        cursor.close()
+        
+        # psycopg v3対応のデータベース操作
+        with db_manager.get_connection() as conn:
+            from database import PSYCOPG_VERSION
+            if PSYCOPG_VERSION == 3:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    conn.commit()
+            else:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    conn.commit()
 
         print("[DEBUG] Progress update successful.") # デバッグログ
         return jsonify({'success': True, 'message': '進捗を更新しました'})
 
     except Exception as e:
-        if conn:
-            conn.rollback()
         import traceback
         print(f"[ERROR] Progress update failed: {e}")
         traceback.print_exc() # スタックトレースをコンソールに出力
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
-    finally:
-        if conn:
-            db_manager.return_connection(conn)
 
 
 @app.route('/api/debug/session', methods=['GET'])
@@ -672,18 +660,23 @@ def generate_activation_code():
         # 有効期限設定
         expires_at = (datetime.now() + timedelta(days=expires_days)).isoformat()
         
-        # データベースに保存
-        conn = db_manager.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            INSERT INTO activation_codes (code, user_email, expires_at)
-            VALUES (%s, %s, %s)
-        """, (code, user_email, expires_at))
-        
-        conn.commit()
-        cursor.close()
-        db_manager.return_connection(conn)
+        # psycopg v3対応のデータベース操作
+        with db_manager.get_connection() as conn:
+            from database import PSYCOPG_VERSION
+            if PSYCOPG_VERSION == 3:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO activation_codes (code, user_email, expires_at)
+                        VALUES (%s, %s, %s)
+                    """, (code, user_email, expires_at))
+                    conn.commit()
+            else:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO activation_codes (code, user_email, expires_at)
+                        VALUES (%s, %s, %s)
+                    """, (code, user_email, expires_at))
+                    conn.commit()
         
         return jsonify({
             'success': True,
@@ -708,11 +701,8 @@ def get_usage_stats():
         return jsonify({'success': False, 'error': '管理者権限が必要です'}), 403
     
     try:
-        conn = db_manager.get_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        
-        # 全ユーザーの使用量統計を取得
-        cursor.execute("""
+        # psycopg v3対応のデータベース操作
+        users = db_manager.execute_query("""
             SELECT 
                 email,
                 is_premium,
@@ -723,7 +713,6 @@ def get_usage_stats():
             FROM users 
             ORDER BY free_usage_count DESC, created_at DESC
         """)
-        users = cursor.fetchall()
         
         # 統計情報を計算
         total_users = len(users)
@@ -731,9 +720,6 @@ def get_usage_stats():
         free_users = total_users - premium_users
         total_usage = sum(user['free_usage_count'] for user in users)
         avg_usage = total_usage / total_users if total_users > 0 else 0
-        
-        cursor.close()
-        db_manager.return_connection(conn)
         
         return jsonify({
             'success': True,
@@ -744,7 +730,7 @@ def get_usage_stats():
                 'total_usage': total_usage,
                 'average_usage': round(avg_usage, 1)
             },
-            'users': [dict(user) for user in users]
+            'users': users
         })
         
     except Exception as e:

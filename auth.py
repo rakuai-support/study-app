@@ -1,5 +1,3 @@
-import psycopg2
-import psycopg2.extras
 import bcrypt
 from flask import session, g
 from flask_login import UserMixin
@@ -21,14 +19,8 @@ class User(UserMixin):
     @staticmethod
     def get(user_id):
         """ユーザーIDからユーザー情報を取得"""
-        conn = None
         try:
-            conn = db_manager.get_connection()
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            
-            cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))
-            user_data = cursor.fetchone()
-            cursor.close()
+            user_data = db_manager.execute_single('SELECT * FROM users WHERE id = %s', (user_id,))
             
             if user_data:
                 return User(
@@ -40,21 +32,15 @@ class User(UserMixin):
                     last_reset_date=user_data['last_reset_date']
                 )
             return None
-        finally:
-            if conn:
-                db_manager.return_connection(conn)
+        except Exception as e:
+            print(f"[AUTH] Error getting user: {e}")
+            return None
 
     @staticmethod
     def get_by_email(email):
         """メールアドレスからユーザー情報を取得"""
-        conn = None
         try:
-            conn = db_manager.get_connection()
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            
-            cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
-            user_data = cursor.fetchone()
-            cursor.close()
+            user_data = db_manager.execute_single('SELECT * FROM users WHERE email = %s', (email,))
             
             if user_data:
                 return User(
@@ -66,58 +52,46 @@ class User(UserMixin):
                     last_reset_date=user_data['last_reset_date']
                 )
             return None
-        finally:
-            if conn:
-                db_manager.return_connection(conn)
+        except Exception as e:
+            print(f"[AUTH] Error getting user by email: {e}")
+            return None
 
     @staticmethod
     def create(email, password):
         """新しいユーザーを作成"""
-        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-        
-        conn = None
         try:
-            conn = db_manager.get_connection()
-            cursor = conn.cursor()
+            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
             
-            cursor.execute(
-                'INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id',
-                (email, password_hash)
-            )
-            user_id = cursor.fetchone()[0]
-            conn.commit()
-            cursor.close()
+            # ユーザーを作成
+            with db_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        'INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id',
+                        (email, password_hash)
+                    )
+                    user_id = cur.fetchone()[0]
+                    conn.commit()
             
             return User(id=user_id, email=email)
-        except psycopg2.IntegrityError:
-            if conn:
-                conn.rollback()
+        except Exception as e:
+            print(f"[AUTH] Error creating user: {e}")
             return None  # メールアドレスが既に存在
-        finally:
-            if conn:
-                db_manager.return_connection(conn)
 
     @staticmethod
     def verify_password(email, password):
         """パスワードを検証"""
-        conn = None
         try:
-            conn = db_manager.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT password_hash FROM users WHERE email = %s', (email,))
-            result = cursor.fetchone()
-            cursor.close()
+            result = db_manager.execute_single('SELECT password_hash FROM users WHERE email = %s', (email,))
             
             if result:
-                # PostgreSQLからのハッシュデータをbcryptで検証
-                stored_hash = result[0]
+                stored_hash = result['password_hash']
                 
-                # 16進エスケープ形式の場合はデコード
-                if isinstance(stored_hash, str) and stored_hash.startswith('\\x'):
+                # バイナリデータの処理
+                if isinstance(stored_hash, memoryview):
+                    stored_hash = stored_hash.tobytes()
+                elif isinstance(stored_hash, str) and stored_hash.startswith('\\x'):
                     try:
-                        # \x形式の16進文字列をバイトに変換
-                        hex_string = stored_hash[2:]  # \xを除去
+                        hex_string = stored_hash[2:]
                         stored_hash = bytes.fromhex(hex_string)
                     except ValueError:
                         print(f"[AUTH] Invalid hex format: {stored_hash[:50]}...")
@@ -127,9 +101,9 @@ class User(UserMixin):
                 
                 return bcrypt.checkpw(password.encode('utf-8'), stored_hash)
             return False
-        finally:
-            if conn:
-                db_manager.return_connection(conn)
+        except Exception as e:
+            print(f"[AUTH] Error verifying password: {e}")
+            return False
 
     def check_usage_limit(self):
         """無料プランの利用制限をチェック"""
@@ -160,17 +134,14 @@ class User(UserMixin):
 
     def increment_usage_count(self):
         """利用回数をカウントアップ（プレミアムユーザーでも使用量把握のためカウント）"""
-        conn = None
         try:
-            conn = db_manager.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                'UPDATE users SET free_usage_count = free_usage_count + 1 WHERE id = %s',
-                (self.id,)
-            )
-            conn.commit()
-            cursor.close()
+            with db_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        'UPDATE users SET free_usage_count = free_usage_count + 1 WHERE id = %s',
+                        (self.id,)
+                    )
+                    conn.commit()
             
             self.free_usage_count += 1
             
@@ -178,103 +149,81 @@ class User(UserMixin):
                 print(f"[DEBUG] Premium user usage tracked: {self.free_usage_count} (unlimited)")
             else:
                 print(f"[DEBUG] Free user usage incremented: {self.free_usage_count}/30")
-        finally:
-            if conn:
-                db_manager.return_connection(conn)
+        except Exception as e:
+            print(f"[AUTH] Error incrementing usage count: {e}")
 
     def reset_usage_count(self):
         """利用回数をリセット（月初処理）"""
-        today = datetime.now().date()
-        
-        conn = None
         try:
-            conn = db_manager.get_connection()
-            cursor = conn.cursor()
+            today = datetime.now().date()
             
-            cursor.execute(
-                'UPDATE users SET free_usage_count = 0, last_reset_date = %s WHERE id = %s',
-                (today, self.id)
-            )
-            conn.commit()
-            cursor.close()
+            with db_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        'UPDATE users SET free_usage_count = 0, last_reset_date = %s WHERE id = %s',
+                        (today, self.id)
+                    )
+                    conn.commit()
             
             self.free_usage_count = 0
             self.last_reset_date = today
-        finally:
-            if conn:
-                db_manager.return_connection(conn)
+        except Exception as e:
+            print(f"[AUTH] Error resetting usage count: {e}")
 
     def activate_premium(self, activation_code):
         """プレミアムアカウントを有効化"""
-        conn = None
         try:
-            conn = db_manager.get_connection()
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            
-            # 認証コードの検証
-            cursor.execute(
-                'SELECT * FROM activation_codes WHERE code = %s AND user_email = %s AND is_used = FALSE AND expires_at > %s',
-                (activation_code, self.email, datetime.now())
-            )
-            code_data = cursor.fetchone()
-            
-            if code_data:
-                # 認証コードを使用済みにする
-                cursor.execute(
-                    'UPDATE activation_codes SET is_used = TRUE WHERE id = %s',
-                    (code_data['id'],)
-                )
-                
-                # プレミアムアカウントに変更（1年間有効）
-                premium_expires = datetime.now() + timedelta(days=365)
-                cursor.execute(
-                    'UPDATE users SET is_premium = TRUE, premium_expires_at = %s WHERE id = %s',
-                    (premium_expires, self.id)
-                )
-                
-                conn.commit()
-                cursor.close()
-                
-                self.is_premium = True
-                self.premium_expires_at = premium_expires
-                return True
-            else:
-                cursor.close()
-                return False
+            with db_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    # 認証コードの検証
+                    cur.execute(
+                        'SELECT * FROM activation_codes WHERE code = %s AND user_email = %s AND is_used = FALSE AND expires_at > %s',
+                        (activation_code, self.email, datetime.now())
+                    )
+                    code_data = cur.fetchone()
+                    
+                    if code_data:
+                        # 認証コードを使用済みにする
+                        cur.execute(
+                            'UPDATE activation_codes SET is_used = TRUE WHERE id = %s',
+                            (code_data['id'],)
+                        )
+                        
+                        # プレミアムアカウントに変更（1年間有効）
+                        premium_expires = datetime.now() + timedelta(days=365)
+                        cur.execute(
+                            'UPDATE users SET is_premium = TRUE, premium_expires_at = %s WHERE id = %s',
+                            (premium_expires, self.id)
+                        )
+                        
+                        conn.commit()
+                        
+                        self.is_premium = True
+                        self.premium_expires_at = premium_expires
+                        return True
+                    else:
+                        return False
         except Exception as e:
-            if conn:
-                conn.rollback()
-            print(f"プレミアム有効化エラー: {e}")
+            print(f"[AUTH] Error activating premium: {e}")
             return False
-        finally:
-            if conn:
-                db_manager.return_connection(conn)
 
     def revoke_premium(self):
         """プレミアムアカウントを解除"""
-        conn = None
         try:
-            conn = db_manager.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute(
-                'UPDATE users SET is_premium = FALSE, premium_expires_at = NULL WHERE id = %s',
-                (self.id,)
-            )
-            conn.commit()
-            cursor.close()
+            with db_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        'UPDATE users SET is_premium = FALSE, premium_expires_at = NULL WHERE id = %s',
+                        (self.id,)
+                    )
+                    conn.commit()
             
             self.is_premium = False
             self.premium_expires_at = None
             return True
         except Exception as e:
-            if conn:
-                conn.rollback()
-            print(f"プレミアム解除エラー: {e}")
+            print(f"[AUTH] Error revoking premium: {e}")
             return False
-        finally:
-            if conn:
-                db_manager.return_connection(conn)
 
     def check_premium_expiry(self):
         """プレミアム期限をチェックして、期限切れの場合は自動解除"""
