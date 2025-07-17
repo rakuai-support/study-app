@@ -14,6 +14,15 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
+# デバッグモードとログレベル設定
+app.config['DEBUG'] = True
+import logging
+import sys
+logging.basicConfig(level=logging.INFO)
+# print文のバッファリングを無効化
+sys.stdout.reconfigure(line_buffering=True)
+print("[STARTUP] DEBUG: Debug mode enabled, logging configured, buffering disabled")
+
 # サーバー統一APIキー（環境変数から取得）
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 

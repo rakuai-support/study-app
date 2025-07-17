@@ -60,7 +60,14 @@ class User(UserMixin):
     def create(email, password):
         """新しいユーザーを作成"""
         try:
+            # まず既存ユーザーをチェック
+            existing_user = User.get_by_email(email)
+            if existing_user:
+                print(f"[AUTH] User already exists: {email}")
+                return None
+            
             password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+            print(f"[AUTH] Creating user with hash type: {type(password_hash)}")
             
             # ユーザーを作成
             with db_manager.get_connection() as conn:
@@ -71,25 +78,35 @@ class User(UserMixin):
                     )
                     user_id = cur.fetchone()[0]
                     conn.commit()
+                    print(f"[AUTH] User created successfully: ID={user_id}")
             
             return User(id=user_id, email=email)
         except Exception as e:
             print(f"[AUTH] Error creating user: {e}")
-            return None  # メールアドレスが既に存在
+            import traceback
+            traceback.print_exc()
+            return None
 
     @staticmethod
     def verify_password(email, password):
         """パスワードを検証"""
         try:
             result = db_manager.execute_single('SELECT password_hash FROM users WHERE email = %s', (email,))
+            print(f"[AUTH] Password verification for: {email}")
             
             if result:
                 stored_hash = result['password_hash']
+                print(f"[AUTH] Stored hash type: {type(stored_hash)}")
                 
-                # バイナリデータの処理
+                # PostgreSQL BYTEA型の処理
                 if isinstance(stored_hash, memoryview):
+                    print("[AUTH] Converting memoryview to bytes")
                     stored_hash = stored_hash.tobytes()
+                elif isinstance(stored_hash, bytes):
+                    print("[AUTH] Hash is already bytes")
+                    # そのまま使用
                 elif isinstance(stored_hash, str) and stored_hash.startswith('\\x'):
+                    print("[AUTH] Converting hex string to bytes")
                     try:
                         hex_string = stored_hash[2:]
                         stored_hash = bytes.fromhex(hex_string)
@@ -97,12 +114,23 @@ class User(UserMixin):
                         print(f"[AUTH] Invalid hex format: {stored_hash[:50]}...")
                         return False
                 elif isinstance(stored_hash, str):
+                    print("[AUTH] Converting string to bytes")
                     stored_hash = stored_hash.encode('utf-8')
+                else:
+                    print(f"[AUTH] Unexpected hash type: {type(stored_hash)}")
+                    return False
                 
-                return bcrypt.checkpw(password.encode('utf-8'), stored_hash)
-            return False
+                print(f"[AUTH] Final hash length: {len(stored_hash)}")
+                result = bcrypt.checkpw(password.encode('utf-8'), stored_hash)
+                print(f"[AUTH] Verification result: {result}")
+                return result
+            else:
+                print(f"[AUTH] User not found: {email}")
+                return False
         except Exception as e:
             print(f"[AUTH] Error verifying password: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def check_usage_limit(self):

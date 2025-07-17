@@ -36,10 +36,13 @@ class DatabaseManager:
     def _initialize_connection(self):
         """データベース接続の初期化"""
         database_url = os.getenv('DATABASE_URL')
+        print(f"[DB] DEBUG: DATABASE_URL = {database_url}")
+        
         if database_url and 'postgresql://' in database_url:
             try:
                 # psycopg v3で接続プール作成（ConnectionPoolが利用可能な場合）
                 if ConnectionPool:
+                    print("[DB] DEBUG: Using ConnectionPool")
                     self.connection_pool = ConnectionPool(
                         database_url,
                         min_size=1,
@@ -49,34 +52,42 @@ class DatabaseManager:
                     )
                 else:
                     # ConnectionPoolが利用できない場合は直接接続
+                    print("[DB] DEBUG: Using direct connection")
                     self.connection_pool = None
                     self.database_url = database_url
                 
+                # db_typeを先に設定
+                self.db_type = 'postgresql'
+                
                 # 接続テスト
-                with self.get_connection() as conn:
+                print("[DB] DEBUG: Testing connection...")
+                if self.connection_pool:
+                    test_conn = self.connection_pool.connection()
+                else:
+                    test_conn = psycopg.connect(self.database_url)
+                
+                with test_conn as conn:
                     with conn.cursor() as cur:
                         cur.execute("SELECT 1")
-                        cur.fetchone()
+                        result = cur.fetchone()
+                        print(f"[DB] DEBUG: Connection test result: {result}")
                 
-                self.db_type = 'postgresql'
                 print(f"[DB] SUCCESS: PostgreSQL connection pool created (psycopg v{PSYCOPG_VERSION})")
                 return
                 
             except Exception as e:
                 print(f"[DB] ERROR: PostgreSQL connection failed: {e}")
+                print("[DB] WARNING: Database features will be disabled")
+                import traceback
+                traceback.print_exc()
                 self.connection_pool = None
                 self.db_type = None
                 return
         
-        # SQLiteフォールバック
-        try:
-            import sqlite3
-            self.db_type = 'sqlite'
-            print("[DB] SUCCESS: SQLite fallback configured")
-        except Exception as e:
-            print(f"[DB] ERROR: SQLite fallback failed: {e}")
-            self.connection_pool = None
-            self.db_type = None
+        # PostgreSQL設定なし
+        print("[DB] WARNING: No PostgreSQL configuration found")
+        self.connection_pool = None
+        self.db_type = None
     
     def get_connection(self):
         """データベース接続を取得"""
@@ -90,10 +101,7 @@ class DatabaseManager:
                 # ConnectionPoolが利用できない場合は直接接続
                 return psycopg.connect(self.database_url)
         else:
-            # SQLiteフォールバック
-            import sqlite3
-            db_path = os.path.join(os.path.dirname(__file__), 'study_app.db')
-            return sqlite3.connect(db_path)
+            raise Exception("Database connection not available - check network connection")
     
     def return_connection(self, conn):
         """接続を返却"""
@@ -119,8 +127,8 @@ db_manager = DatabaseManager()
 
 def initialize_database():
     """データベースの初期化"""
-    if db_manager.connection_pool is None:
-        print("[DB] ERROR: Database connection not established")
+    if db_manager.db_type != 'postgresql':
+        print("[DB] WARNING: Database connection not available, skipping initialization")
         return False
     
     try:
