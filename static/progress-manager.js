@@ -194,6 +194,16 @@ class ProgressManager {
             window.recordStudyDay();
         }
         
+        // 最近の活動に記録
+        this.recordRecentActivity(identifier, level, goalIndex, isCompleted);
+        
+        // 統計ダッシュボードが開いている場合は即座更新
+        if (document.getElementById('statisticsModal')?.classList.contains('show')) {
+            if (window.updateRecentActivity) {
+                window.updateRecentActivity();
+            }
+        }
+        
         // フローティング進捗カードも更新
         if (window.location.pathname === '/') {
             this.updateFloatingProgressCard();
@@ -791,6 +801,55 @@ class ProgressManager {
         if (percentage >= 25) return { icon: '🌿', message: '良いスタートです！' };
         if (percentage >= 10) return { icon: '🌱', message: '学習の芽が出てきました！' };
         return { icon: '💪', message: '一緒に頑張りましょう！' };
+    }
+    
+    // 最近の活動を記録
+    recordRecentActivity(identifier, level, goalIndex, isCompleted) {
+        try {
+            const recentActivities = JSON.parse(localStorage.getItem('recentActivities') || '[]');
+            
+            // 教科名を取得（簡易版）
+            const subjectMap = {
+                '831': '国語', '832': '算数', '833': '理科', '834': '社会', '835': '英語'
+            };
+            const subjectCode = identifier.substring(0, 3);
+            const subject = subjectMap[subjectCode] || '学習';
+            
+            // レベル名を日本語化
+            const levelNames = {
+                'beginnerGoals': '初心者',
+                'intermediateGoals': '中級者', 
+                'advancedGoals': '上級者'
+            };
+            const levelName = levelNames[level] || level;
+            
+            // 活動内容を生成
+            const activity = {
+                timestamp: Date.now(),
+                identifier: identifier,
+                level: level,
+                goalIndex: goalIndex,
+                completed: isCompleted,
+                icon: isCompleted ? 'fas fa-check' : 'fas fa-undo',
+                title: isCompleted ? 
+                    `${subject}の${levelName}目標を達成` : 
+                    `${subject}の${levelName}目標をリセット`
+            };
+            
+            // 配列に追加（最大50件まで保持）
+            recentActivities.push(activity);
+            if (recentActivities.length > 50) {
+                recentActivities.shift(); // 古いものを削除
+            }
+            
+            // localStorageに保存
+            localStorage.setItem('recentActivities', JSON.stringify(recentActivities));
+            
+            console.log('📝 最近の活動に記録:', activity.title);
+            
+        } catch (error) {
+            console.error('❌ 最近の活動記録エラー:', error);
+        }
     }
 }
 

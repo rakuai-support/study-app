@@ -725,13 +725,58 @@
     }
 
     function getRecentActivities() {
-        // ダミーデータ（実際にはlocalStorageやサーバーから取得）
-        return [
-            { icon: 'fas fa-check', title: '国語の項目を完了', time: '2時間前' },
-            { icon: 'fas fa-star', title: '算数で目標達成', time: '昨日' },
-            { icon: 'fas fa-trophy', title: '25%マイルストーン達成', time: '2日前' },
-            { icon: 'fas fa-graduation-cap', title: 'チュートリアル完了', time: '3日前' }
-        ];
+        // 実際の学習活動データを取得
+        const studyDays = JSON.parse(localStorage.getItem('studyDays') || '[]');
+        const recentActivities = JSON.parse(localStorage.getItem('recentActivities') || '[]');
+        const activities = [];
+        
+        // 最近の具体的な進捗活動を追加
+        recentActivities.slice(-10).reverse().forEach(activity => {
+            activities.push({
+                icon: activity.icon,
+                title: activity.title,
+                time: formatTimeAgo(activity.timestamp)
+            });
+        });
+        
+        // 学習日の記録を追加
+        studyDays.slice(-3).reverse().forEach((studyDay, index) => {
+            const date = new Date(studyDay);
+            const timeAgo = index === 0 ? '今日' : 
+                           index === 1 ? '昨日' : 
+                           `${index + 1}日前`;
+            
+            activities.push({
+                icon: 'fas fa-calendar-check',
+                title: '学習活動を記録',
+                time: timeAgo
+            });
+        });
+        
+        // アクティビティがない場合のデフォルト表示
+        if (activities.length === 0) {
+            return [{
+                icon: 'fas fa-seedling',
+                title: '学習を始めよう！',
+                time: '最初の一歩を踏み出しましょう'
+            }];
+        }
+        
+        return activities.slice(0, 5); // 最新5件を表示
+    }
+    
+    function formatTimeAgo(timestamp) {
+        const now = Date.now();
+        const diff = now - timestamp;
+        const minutes = Math.floor(diff / (1000 * 60));
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        
+        if (minutes < 1) return 'たった今';
+        if (minutes < 60) return `${minutes}分前`;
+        if (hours < 24) return `${hours}時間前`;
+        if (days < 7) return `${days}日前`;
+        return '1週間以上前';
     }
 
     function updateAchievements(stats) {
