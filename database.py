@@ -26,12 +26,25 @@ except ImportError:
 load_dotenv()
 
 class DatabaseManager:
-    """psycopg v3を使用したデータベース管理クラス"""
+    """psycopg v3を使用したデータベース管理クラス（シングルトンパターン）"""
+    
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(DatabaseManager, cls).__new__(cls)
+        return cls._instance
     
     def __init__(self):
+        if DatabaseManager._initialized:
+            return
+        
         self.connection_pool = None
         self.db_type = None
         self._initialize_connection()
+        DatabaseManager._initialized = True
+        print("[DB] INFO: DatabaseManager singleton initialized")
     
     def _initialize_connection(self):
         """データベース接続の初期化"""
@@ -42,13 +55,13 @@ class DatabaseManager:
             try:
                 # psycopg v3で接続プール作成（ConnectionPoolが利用可能な場合）
                 if ConnectionPool:
-                    print("[DB] DEBUG: Using ConnectionPool")
+                    print("[DB] INFO: Creating PostgreSQL connection pool")
                     self.connection_pool = ConnectionPool(
                         database_url,
-                        min_size=1,
-                        max_size=10,
-                        max_idle=300,
-                        max_lifetime=3600
+                        min_size=2,
+                        max_size=20,
+                        max_idle=600,
+                        max_lifetime=7200
                     )
                 else:
                     # ConnectionPoolが利用できない場合は直接接続

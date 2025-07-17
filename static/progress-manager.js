@@ -13,6 +13,11 @@ class ProgressManager {
         this.SAVE_DELAY = 3000; // 3秒デバウンス
         this.isSaving = false; // 保存中フラグ
         
+        // API統計キャッシュ
+        this.statsCache = null;
+        this.statsCacheExpiry = null;
+        this.STATS_CACHE_DURATION = 30000; // 30秒キャッシュ
+        
         this.init();
     }
 
@@ -623,14 +628,26 @@ class ProgressManager {
         let totalGoals = 0;
 
         try {
-            console.log('🔍 [DEBUG] API統計データ取得開始');
-            const response = await fetch('/api/progress-stats');
-            const data = await response.json();
-            console.log('🔍 [DEBUG] API統計レスポンス:', data);
-            if (data.success) {
-                totalIdentifiers = data.totalIdentifiers;
-                totalGoals = data.totalGoals;
-                console.log('🔍 [DEBUG] API統計データ設定完了:', { totalIdentifiers, totalGoals });
+            // キャッシュチェック
+            const now = Date.now();
+            if (this.statsCache && this.statsCacheExpiry && now < this.statsCacheExpiry) {
+                console.log('🔍 [DEBUG] 統計データキャッシュヒット');
+                totalIdentifiers = this.statsCache.totalIdentifiers;
+                totalGoals = this.statsCache.totalGoals;
+            } else {
+                console.log('🔍 [DEBUG] API統計データ取得開始');
+                const response = await fetch('/api/progress-stats');
+                const data = await response.json();
+                console.log('🔍 [DEBUG] API統計レスポンス:', data);
+                if (data.success) {
+                    totalIdentifiers = data.totalIdentifiers;
+                    totalGoals = data.totalGoals;
+                    
+                    // キャッシュに保存
+                    this.statsCache = { totalIdentifiers, totalGoals };
+                    this.statsCacheExpiry = now + this.STATS_CACHE_DURATION;
+                    console.log('🔍 [DEBUG] API統計データをキャッシュ:', { totalIdentifiers, totalGoals });
+                }
             }
         } catch (error) {
             console.error('❌ [DEBUG] 統計API呼び出しエラー:', error);
