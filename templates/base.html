@@ -335,42 +335,8 @@
                 <div class="stats-charts">
                     <div class="chart-section">
                         <h4><i class="fas fa-chart-pie"></i> 教科別進捗</h4>
-                        <div class="subject-progress">
-                            <div class="subject-item" data-subject="国語">
-                                <span class="subject-name">国語</span>
-                                <div class="subject-bar">
-                                    <div class="subject-fill" style="width: 0%"></div>
-                                </div>
-                                <span class="subject-percent">0%</span>
-                            </div>
-                            <div class="subject-item" data-subject="算数">
-                                <span class="subject-name">算数</span>
-                                <div class="subject-bar">
-                                    <div class="subject-fill" style="width: 0%"></div>
-                                </div>
-                                <span class="subject-percent">0%</span>
-                            </div>
-                            <div class="subject-item" data-subject="理科">
-                                <span class="subject-name">理科</span>
-                                <div class="subject-bar">
-                                    <div class="subject-fill" style="width: 0%"></div>
-                                </div>
-                                <span class="subject-percent">0%</span>
-                            </div>
-                            <div class="subject-item" data-subject="社会">
-                                <span class="subject-name">社会</span>
-                                <div class="subject-bar">
-                                    <div class="subject-fill" style="width: 0%"></div>
-                                </div>
-                                <span class="subject-percent">0%</span>
-                            </div>
-                            <div class="subject-item" data-subject="英語">
-                                <span class="subject-name">英語</span>
-                                <div class="subject-bar">
-                                    <div class="subject-fill" style="width: 0%"></div>
-                                </div>
-                                <span class="subject-percent">0%</span>
-                            </div>
+                        <div class="subject-progress" id="subjectProgressContainer">
+                            <!-- 教科別進捗がここに動的に生成されます -->
                         </div>
                     </div>
                     
@@ -669,41 +635,85 @@
     }
 
     async function updateSubjectProgress() {
-        const subjects = ['国語', '算数', '理科', '社会', '英語'];
+        // PostgreSQLから動的に教科リストを取得
+        let subjects = [];
+        try {
+            const response = await fetch('/api/subjects');
+            if (response.ok) {
+                subjects = await response.json();
+            } else {
+                // フォールバック: 固定リスト
+                subjects = ['国語', '算数', '数学', '理科', '社会', '英語', '道徳', '音楽', '美術', '保健体育', '技術・家庭'];
+            }
+        } catch (error) {
+            console.error('教科リスト取得エラー:', error);
+            subjects = ['国語', '算数', '数学', '理科', '社会', '英語', '道徳', '音楽', '美術', '保健体育', '技術・家庭'];
+        }
         
-        for (let subject of subjects) {
-            try {
-                const cards = document.querySelectorAll(`[data-subject="${subject}"]`);
-                let totalItems = 0;
-                let achievedItems = 0;
-                
-                cards.forEach(card => {
-                    totalItems++;
+        // 教科別進捗コンテナを動的に生成
+        const container = document.getElementById('subjectProgressContainer');
+        if (container) {
+            container.innerHTML = ''; // 既存の内容をクリア
+            
+            subjects.forEach(subject => {
+                const subjectItem = document.createElement('div');
+                subjectItem.className = 'subject-item';
+                subjectItem.setAttribute('data-subject', subject);
+                subjectItem.innerHTML = `
+                    <span class="subject-name">${subject}</span>
+                    <div class="subject-bar">
+                        <div class="subject-fill" style="width: 0%"></div>
+                    </div>
+                    <span class="subject-percent">0%</span>
+                `;
+                container.appendChild(subjectItem);
+            });
+        }
+        
+        // APIから学習項目データを取得して教科別進捗を計算
+        try {
+            const response = await fetch('/api/progress-stats');
+            if (!response.ok) {
+                throw new Error('統計データの取得に失敗しました');
+            }
+            const stats = await response.json();
+            
+            for (let subject of subjects) {
+                try {
+                    // 各教科の項目を統計データから取得
+                    const subjectItems = stats.items_by_subject[subject] || [];
+                    const totalItems = subjectItems.length;
+                    let achievedItems = 0;
+                    
+                    // 進捗データが存在する場合のみ計算
                     const progressData = window.progressManager?.progressData;
                     if (progressData) {
-                        const identifier = card.getAttribute('data-identifier');
-                        if (identifier && progressData[identifier]) {
-                            const progress = window.progressManager.getProgressForCard(identifier);
-                            if (progress.percentage > 50) {
-                                achievedItems++;
+                        subjectItems.forEach(item => {
+                            if (progressData[item.identifier]) {
+                                const progress = window.progressManager.getProgressForCard(item.identifier);
+                                if (progress.percentage > 50) {
+                                    achievedItems++;
+                                }
                             }
-                        }
+                        });
                     }
-                });
-                
-                const percentage = totalItems > 0 ? Math.round((achievedItems / totalItems) * 100) : 0;
-                
-                const subjectItem = document.querySelector(`.subject-item[data-subject="${subject}"]`);
-                if (subjectItem) {
-                    const fill = subjectItem.querySelector('.subject-fill');
-                    const percent = subjectItem.querySelector('.subject-percent');
                     
-                    if (fill) fill.style.width = percentage + '%';
-                    if (percent) percent.textContent = percentage + '%';
+                    const percentage = totalItems > 0 ? Math.round((achievedItems / totalItems) * 100) : 0;
+                    
+                    const subjectItem = document.querySelector(`.subject-item[data-subject="${subject}"]`);
+                    if (subjectItem) {
+                        const fill = subjectItem.querySelector('.subject-fill');
+                        const percent = subjectItem.querySelector('.subject-percent');
+                        
+                        if (fill) fill.style.width = percentage + '%';
+                        if (percent) percent.textContent = percentage + '%';
+                    }
+                } catch (error) {
+                    console.error(`${subject}の進捗更新エラー:`, error);
                 }
-            } catch (error) {
-                console.error(`${subject}の進捗更新エラー:`, error);
             }
+        } catch (error) {
+            console.error('教科別進捗データの取得エラー:', error);
         }
     }
 
