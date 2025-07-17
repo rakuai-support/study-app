@@ -635,42 +635,7 @@
     }
 
     async function updateSubjectProgress() {
-        // PostgreSQLから動的に教科リストを取得
-        let subjects = [];
-        try {
-            const response = await fetch('/api/subjects');
-            if (response.ok) {
-                subjects = await response.json();
-            } else {
-                // フォールバック: identifier順の固定リスト
-                subjects = ['国語', '社会', '数学', '理科', '音楽', '英語', '技術・家庭', '保健体育', '美術', '道徳'];
-            }
-        } catch (error) {
-            console.error('教科リスト取得エラー:', error);
-            subjects = ['国語', '社会', '数学', '理科', '音楽', '英語', '技術・家庭', '保健体育', '美術', '道徳'];
-        }
-        
-        // 教科別進捗コンテナを動的に生成
-        const container = document.getElementById('subjectProgressContainer');
-        if (container) {
-            container.innerHTML = ''; // 既存の内容をクリア
-            
-            subjects.forEach(subject => {
-                const subjectItem = document.createElement('div');
-                subjectItem.className = 'subject-item';
-                subjectItem.setAttribute('data-subject', subject);
-                subjectItem.innerHTML = `
-                    <span class="subject-name">${subject}</span>
-                    <div class="subject-bar">
-                        <div class="subject-fill" style="width: 0%"></div>
-                    </div>
-                    <span class="subject-percent">0%</span>
-                `;
-                container.appendChild(subjectItem);
-            });
-        }
-        
-        // APIから学習項目データを取得して教科別進捗を計算
+        // 統計データを取得してから教科リストを取得
         try {
             const response = await fetch('/api/progress-stats');
             if (!response.ok) {
@@ -678,12 +643,39 @@
             }
             const stats = await response.json();
             
+            // 実際にデータが存在する教科のみを取得
+            const subjects = Object.keys(stats.items_by_subject || {});
+            console.log('実際の教科リスト:', subjects);
+        
+            // 教科別進捗コンテナを動的に生成
+            const container = document.getElementById('subjectProgressContainer');
+            if (container) {
+                container.innerHTML = ''; // 既存の内容をクリア
+                
+                subjects.forEach(subject => {
+                    const subjectItem = document.createElement('div');
+                    subjectItem.className = 'subject-item';
+                    subjectItem.setAttribute('data-subject', subject);
+                    subjectItem.innerHTML = `
+                        <span class="subject-name">${subject}</span>
+                        <div class="subject-bar">
+                            <div class="subject-fill" style="width: 0%"></div>
+                        </div>
+                        <span class="subject-percent">0%</span>
+                    `;
+                    container.appendChild(subjectItem);
+                });
+            }
+            
+            // 各教科の進捗を計算
             for (let subject of subjects) {
                 try {
                     // 各教科の項目を統計データから取得
                     const subjectItems = stats.items_by_subject[subject] || [];
                     const totalItems = subjectItems.length;
                     let achievedItems = 0;
+                    
+                    console.log(`${subject}: ${totalItems}項目`);
                     
                     // 進捗データが存在する場合のみ計算
                     const progressData = window.progressManager?.progressData;
@@ -699,6 +691,7 @@
                     }
                     
                     const percentage = totalItems > 0 ? Math.round((achievedItems / totalItems) * 100) : 0;
+                    console.log(`${subject}: ${achievedItems}/${totalItems} = ${percentage}%`);
                     
                     const subjectItem = document.querySelector(`.subject-item[data-subject="${subject}"]`);
                     if (subjectItem) {

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}【中学生版テスト】AI学習アプリ（manabuwa）{% endblock %}
+{% block title %}【中学生版】AI学習アプリ（manabuwa）{% endblock %}
 
 {% block content %}
 <div class="hero-section">
@@ -425,105 +425,8 @@ function toggleFloatingProgress() {
     }
 }
 
-async function updateFloatingProgress() {
-    if (window.progressManager) {
-        try {
-            const stats = await window.progressManager.getOverallStats();
-            
-            // メイン進捗情報
-            const progressPercentage = Math.round(stats.overallPercentage);
-            const progressTextElement = document.getElementById('floatingProgressText');
-            if (progressTextElement) {
-                progressTextElement.textContent = `${progressPercentage}% 完了`;
-            }
-            
-            // 統計数値
-            const completedItemsElement = document.getElementById('floatingCompletedItems');
-            const completedGoalsElement = document.getElementById('floatingCompletedGoals');
-            const totalItemsElement = document.getElementById('floatingTotalItems');
-            
-            if (completedItemsElement) completedItemsElement.textContent = stats.achievedIdentifiers || 0;
-            if (completedGoalsElement) completedGoalsElement.textContent = (stats.completedGoals || 0).toLocaleString();
-            if (totalItemsElement) totalItemsElement.textContent = stats.totalIdentifiers || 741;
-            
-            // プログレスバー更新
-            const progressFill = document.getElementById('floatingProgressFill');
-            if (progressFill) {
-                progressFill.style.width = progressPercentage + '%';
-            }
-            
-            // 達成バッジとモチベーション更新
-            updateFloatingAchievementBadge(progressPercentage);
-            updateFloatingMotivation(progressPercentage, stats.achievedIdentifiers || 0);
-        } catch (error) {
-            console.error('フローティング進捗カードの更新エラー:', error);
-        }
-    }
-}
-
-function updateFloatingAchievementBadge(percentage) {
-    const badge = document.getElementById('floatingAchievementBadge');
-    const badgeIcon = badge.querySelector('i');
-    
-    if (percentage >= 90) {
-        badgeIcon.className = 'fas fa-crown';
-        badge.style.background = 'linear-gradient(135deg, #ffd700, #ffb347)';
-    } else if (percentage >= 75) {
-        badgeIcon.className = 'fas fa-trophy';
-        badge.style.background = 'linear-gradient(135deg, #ff9800, #f57c00)';
-    } else if (percentage >= 50) {
-        badgeIcon.className = 'fas fa-star';
-        badge.style.background = 'linear-gradient(135deg, #4caf50, #388e3c)';
-    } else if (percentage >= 25) {
-        badgeIcon.className = 'fas fa-leaf';
-        badge.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
-    } else {
-        badgeIcon.className = 'fas fa-seedling';
-        badge.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
-    }
-}
-
-function updateFloatingMotivation(percentage, completedItems) {
-    const motivationElement = document.getElementById('floatingMotivation');
-    const motivationSpan = motivationElement.querySelector('span');
-    
-    let message = '';
-    let icon = 'fas fa-heart';
-    
-    if (percentage >= 90) {
-        message = `🎉 ${completedItems}項目完了！チャンピオンです！`;
-        icon = 'fas fa-crown';
-    } else if (percentage >= 75) {
-        message = `🏆 ${completedItems}項目完了！もうすぐゴール！`;
-        icon = 'fas fa-trophy';
-    } else if (percentage >= 50) {
-        message = `⭐ ${completedItems}項目完了！素晴らしい進歩！`;
-        icon = 'fas fa-star';
-    } else if (percentage >= 25) {
-        message = `🌿 ${completedItems}項目完了！順調です！`;
-        icon = 'fas fa-leaf';
-    } else if (completedItems > 0) {
-        message = `🌱 ${completedItems}項目完了！良いスタート！`;
-        icon = 'fas fa-seedling';
-    } else {
-        message = '学習の旅を始めましょう！';
-        icon = 'fas fa-heart';
-    }
-    
-    motivationElement.querySelector('i').className = icon;
-    motivationSpan.textContent = message;
-}
-
 // グローバル関数として公開
 window.updateProgressDashboard = updateProgressDashboard;
-window.updateFloatingProgress = updateFloatingProgress;
-
-// フローティング進捗の初期化
-setTimeout(() => {
-    updateFloatingProgress();
-    // 定期更新（5秒ごと）
-    setInterval(updateFloatingProgress, 5000);
-}, 1000);
 </script>
 
 

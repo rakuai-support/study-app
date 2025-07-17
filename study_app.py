@@ -166,6 +166,14 @@ class StudyDataViewer:
             items = group.to_dict('records')
             # キーワードと合計ゴール数を計算して追加
             for item in items:
+                # NaN値を適切にハンドリング
+                for key, value in item.items():
+                    if pd.isna(value):
+                        if key == 'grade':
+                            item[key] = 0  # gradeのNaNは0に変換
+                        else:
+                            item[key] = None  # その他のNaNはNoneに変換
+                
                 item['keywords'] = json.loads(item['keywords'])
                 try:
                     content_data = json.loads(item['content_types'])
@@ -229,15 +237,22 @@ class StudyDataViewer:
         
         try:
             # 変更後: DataFrameから直接データを取得し、必要なJSONをパース
+            row_data = row.iloc[0]
+            
+            # NaN値を適切にハンドリング
+            grade = row_data['grade']
+            if pd.isna(grade):
+                grade = 0
+            
             learning_prompt_data = {
-                'learningPrompt': row.iloc[0]['learning_prompt'],
-                'keywords': json.loads(row.iloc[0]['keywords']),
-                'grade': row.iloc[0]['grade'],
-                'subject': row.iloc[0]['subject'],
-                'learningObjective': row.iloc[0]['learning_objective'],
-                'difficulty': row.iloc[0]['difficulty']
+                'learningPrompt': row_data['learning_prompt'],
+                'keywords': json.loads(row_data['keywords']),
+                'grade': grade,
+                'subject': row_data['subject'],
+                'learningObjective': row_data['learning_objective'],
+                'difficulty': row_data['difficulty']
             }
-            content_creation_prompt = json.loads(row.iloc[0]['content_types'])
+            content_creation_prompt = json.loads(row_data['content_types'])
             
             result = {
                 'identifier': identifier,
