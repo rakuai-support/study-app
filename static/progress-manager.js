@@ -1,10 +1,18 @@
 
-// 学習進捗管理システム (サーバーサイド対応版)
+// 学習進捗管理システム (パフォーマンス最適化版)
 class ProgressManager {
     constructor() {
         // ログイン中のユーザーIDを取得
         this.userId = null;
         this.progressData = {}; // { 'identifier': { 'level': [true, false], ... }, ... }
+        
+        // パフォーマンス最適化用
+        this.localCache = {}; // ローカルキャッシュ
+        this.pendingUpdates = new Map(); // 未保存の変更: Map<string, {identifier, level, goalIndex, completed}>
+        this.saveTimeout = null; // デバウンス用タイマー
+        this.SAVE_DELAY = 3000; // 3秒デバウンス
+        this.isSaving = false; // 保存中フラグ
+        
         this.init();
     }
 
@@ -22,7 +30,9 @@ class ProgressManager {
         await this.getCurrentUser();
         if (this.userId) {
             await this.loadProgressFromServer();
+            this.initializeLocalCache();
             this.setupEventListeners();
+            this.setupAutoSave();
             await this.initializeUI();
         } else {
             console.log('⚠️ ユーザーがログインしていません。進捗管理は無効です。');
@@ -71,10 +81,10 @@ class ProgressManager {
     }
 
     setupEventListeners() {
-        // チェックボックスの変更を監視
+        // チェックボックスの変更を監視（最適化版）
         document.addEventListener('change', (event) => {
             if (event.target.classList.contains('progress-checkbox')) {
-                this.handleProgressChange(event.target);
+                this.handleProgressChangeOptimized(event.target);
             }
         });
 
@@ -84,6 +94,180 @@ class ProgressManager {
                 this.resetProgress(event.target.dataset.identifier);
             }
         });
+    }
+    
+    // ローカルキャッシュ初期化
+    initializeLocalCache() {
+        this.localCache = JSON.parse(JSON.stringify(this.progressData));
+        console.log('✅ ローカルキャッシュを初期化しました');
+    }
+    
+    // 自動保存設定
+    setupAutoSave() {
+        // ページ離脱時の強制保存
+        window.addEventListener('beforeunload', () => {
+            if (this.pendingUpdates.size > 0) {
+                this.forceSaveToServer();
+            }
+        });
+        
+        // フォーカス離脱時の保存
+        window.addEventListener('blur', () => {
+            if (this.pendingUpdates.size > 0) {
+                this.batchSaveToServer();
+            }
+        });
+        
+        console.log('✅ 自動保存機能をセットアップしました');
+    }
+    
+    // 最適化された進捗変更ハンドラー
+    handleProgressChangeOptimized(checkbox) {
+        const identifier = checkbox.dataset.identifier;
+        const level = checkbox.dataset.level;
+        const goalIndex = parseInt(checkbox.dataset.index, 10);
+        const isCompleted = checkbox.checked;
+        
+        console.log(`🚀 [OPTIMIZED] 進捗変更: ${identifier}.${level}[${goalIndex}] = ${isCompleted}`);
+        
+        // 1. 即座にローカルキャッシュ更新
+        this.updateLocalCache(identifier, level, goalIndex, isCompleted);
+        
+        // 2. UI即時更新
+        this.updateUIImmediately(identifier);
+        
+        // 3. 変更を未保存リストに追加
+        const updateKey = `${identifier}.${level}.${goalIndex}`;
+        this.pendingUpdates.set(updateKey, {
+            identifier,
+            level,
+            goalIndex,
+            completed: isCompleted
+        });
+        
+        // 4. デバウンス保存
+        this.scheduleBatchSave();
+    }
+    
+    // ローカルキャッシュ更新
+    updateLocalCache(identifier, level, goalIndex, isCompleted) {
+        if (!this.localCache[identifier]) {
+            this.localCache[identifier] = {};
+        }
+        if (!this.localCache[identifier][level]) {
+            this.localCache[identifier][level] = [];
+        }
+        
+        this.localCache[identifier][level][goalIndex] = isCompleted;
+        
+        // progressDataも更新（既存機能との互換性）
+        if (!this.progressData[identifier]) {
+            this.progressData[identifier] = {};
+        }
+        if (!this.progressData[identifier][level]) {
+            this.progressData[identifier][level] = [];
+        }
+        this.progressData[identifier][level][goalIndex] = isCompleted;
+    }
+    
+    // UI即時更新
+    updateUIImmediately(identifier) {
+        // 進捗バーと統計を即座に更新
+        this.updateProgressDisplay(identifier);
+        
+        // 進捗変更通知
+        this.showProgressNotification(true);
+        
+        // 学習日を記録
+        if (window.recordStudyDay) {
+            window.recordStudyDay();
+        }
+        
+        // フローティング進捗カードも更新
+        if (window.location.pathname === '/') {
+            this.updateFloatingProgressCard();
+        }
+    }
+    
+    // フローティング進捗カード更新
+    updateFloatingProgressCard() {
+        // 既存のupdateHomePageProgressメソッドを呼び出し
+        if (typeof this.updateHomePageProgress === 'function') {
+            this.updateHomePageProgress();
+        }
+    }
+    
+    // バッチ保存のスケジューリング
+    scheduleBatchSave() {
+        // 既存のタイマーをクリア
+        if (this.saveTimeout) {
+            clearTimeout(this.saveTimeout);
+        }
+        
+        // 新しいタイマー設定
+        this.saveTimeout = setTimeout(() => {
+            this.batchSaveToServer();
+        }, this.SAVE_DELAY);
+        
+        console.log(`⏰ バッチ保存を${this.SAVE_DELAY}ms後にスケジュール (保留中: ${this.pendingUpdates.size}件)`);
+    }
+    
+    // バッチ保存実行
+    async batchSaveToServer() {
+        if (this.isSaving || this.pendingUpdates.size === 0) {
+            return;
+        }
+        
+        this.isSaving = true;
+        const updates = Array.from(this.pendingUpdates.values());
+        console.log(`💾 バッチ保存開始: ${updates.length}件の変更`);
+        
+        try {
+            const response = await fetch('/api/progress/batch-update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userId: this.userId,
+                    updates: updates
+                }),
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    console.log(`✅ バッチ保存完了: ${updates.length}件`);
+                    this.pendingUpdates.clear();
+                } else {
+                    console.error('❌ バッチ保存失敗:', data.error);
+                }
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.error('❌ バッチ保存エラー:', error);
+            // エラー時は次回の保存でリトライ
+        } finally {
+            this.isSaving = false;
+        }
+    }
+    
+    // 強制保存（ページ離脱時用）
+    forceSaveToServer() {
+        if (this.pendingUpdates.size === 0) return;
+        
+        const updates = Array.from(this.pendingUpdates.values());
+        const data = JSON.stringify({
+            userId: this.userId,
+            updates: updates
+        });
+        
+        // sendBeaconで非同期送信（ページ離脱後も実行される）
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon('/api/progress/batch-update', data);
+            console.log(`🚀 強制保存: ${updates.length}件 (sendBeacon)`);
+        }
     }
     
     // 最初に表示されるUIの初期化
@@ -164,38 +348,8 @@ class ProgressManager {
         return formatted;
     }
 
-    // サーバーに進捗更新を送信
-    async updateProgressOnServer(identifier, level, goalIndex, isCompleted) {
-        try {
-            const response = await fetch('/api/progress/update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    userId: this.userId,
-                    itemIdentifier: identifier,
-                    level: level,
-                    goalIndex: goalIndex,
-                    completed: isCompleted,
-                }),
-            });
-
-            const data = await response.json();
-            if (data.success) {
-                console.log('進捗をサーバーに保存しました。');
-                return true;
-            } else {
-                console.error('進捗の保存に失敗しました:', data.error);
-                this.showNotification('進捗の保存に失敗しました。', 'error');
-                return false;
-            }
-        } catch (error) {
-            console.error('進捗更新APIの呼び出しエラー:', error);
-            this.showNotification('サーバーとの通信に失敗しました。', 'error');
-            return false;
-        }
-    }
+    // 【削除済み】古いupdateProgressOnServerメソッド
+    // 新しいバッチ更新システムに置き換え済み
 
     // 特定の識別子の進捗データを取得 (内部データから)
     getProgressForIdentifier(identifier) {
@@ -235,43 +389,8 @@ class ProgressManager {
     }
 
 
-    // 進捗変更をハンドル
-    async handleProgressChange(checkbox) {
-        console.log('[DEBUG] handleProgressChange called for:', checkbox.dataset.identifier); // ★★★ デバッグログ追加 ★★★
-        const identifier = checkbox.dataset.identifier;
-        const level = checkbox.dataset.level;
-        const index = parseInt(checkbox.dataset.index);
-        const isChecked = checkbox.checked;
-
-        // サーバーに進捗を更新
-        const success = await this.updateProgressOnServer(identifier, level, index, isChecked);
-
-        if (success) {
-            // 内部データを更新
-            if (!this.progressData[identifier]) {
-                this.progressData[identifier] = this.initializeProgressDataFromDOM(identifier);
-            }
-            
-            const goals = this.progressData[identifier][level];
-            if (goals.length <= index) {
-                 while (goals.length <= index) { goals.push(false); }
-            }
-            goals[index] = isChecked;
-
-            // UIを更新
-            this.updateProgressDisplay(identifier);
-            this.showProgressNotification(isChecked);
-            
-            // 学習日を記録
-            if (isChecked && window.recordStudyDay) {
-                window.recordStudyDay();
-            }
-        } else {
-            // 失敗した場合はチェックボックスを元に戻す
-            checkbox.checked = !isChecked;
-            this.showNotification('更新に失敗したため、変更を元に戻しました。', 'error');
-        }
-    }
+    // 【削除済み】古いhandleProgressChangeメソッド
+    // 新しいhandleProgressChangeOptimizedメソッドに置き換え済み
 
     // 進捗表示を更新
     updateProgressDisplay(identifier) {

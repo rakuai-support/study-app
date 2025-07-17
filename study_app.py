@@ -355,6 +355,68 @@ def update_progress():
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 
+@app.route('/api/progress/batch-update', methods=['POST'])
+def batch_update_progress():
+    """進捗データをバッチで更新（パフォーマンス最適化）"""
+    try:
+        data = request.get_json()
+        print(f"[DEBUG] /api/progress/batch-update received: {len(data.get('updates', []))} updates") # デバッグログ
+
+        user_id = data.get('userId')
+        updates = data.get('updates', [])
+
+        if not user_id or not updates:
+            return jsonify({'success': False, 'error': '必要なパラメータが不足しています'}), 400
+
+        # バッチ処理用のSQL（PostgreSQL UPSERT）
+        sql = """
+            INSERT INTO progress (user_id, item_identifier, level, goal_index, completed, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, item_identifier, level, goal_index) 
+            DO UPDATE SET completed = EXCLUDED.completed, updated_at = EXCLUDED.updated_at
+        """
+        
+        # バッチパラメータ準備
+        current_time = datetime.now()
+        batch_params = []
+        
+        for update in updates:
+            item_identifier = update.get('identifier')
+            level = update.get('level')
+            goal_index = update.get('goalIndex')
+            completed = update.get('completed')
+            
+            if not all([item_identifier, level, goal_index is not None, completed is not None]):
+                print(f"[WARNING] Skipping invalid update: {update}")
+                continue
+                
+            batch_params.append((user_id, item_identifier, level, goal_index, completed, current_time))
+        
+        if not batch_params:
+            return jsonify({'success': False, 'error': '有効な更新データがありません'}), 400
+        
+        print(f"[DEBUG] Executing batch update: {len(batch_params)} records")
+        
+        # バッチでDBに書き込み
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.executemany(sql, batch_params)
+                conn.commit()
+
+        print(f"[DEBUG] Batch progress update successful: {len(batch_params)} records updated")
+        return jsonify({
+            'success': True, 
+            'message': f'{len(batch_params)}件の進捗を更新しました',
+            'updated_count': len(batch_params)
+        })
+
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Batch progress update failed: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
 @app.route('/api/debug/session', methods=['GET'])
 def debug_session():
     """セッション情報のデバッグ"""
