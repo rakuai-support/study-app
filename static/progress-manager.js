@@ -18,6 +18,12 @@ class ProgressManager {
         this.statsCacheExpiry = null;
         this.STATS_CACHE_DURATION = 30000; // 30秒キャッシュ
         
+        // 進捗データキャッシュ
+        this.progressDataCache = null;
+        this.progressCacheExpiry = null;
+        this.PROGRESS_CACHE_DURATION = 60000; // 60秒キャッシュ
+        this.lastProgressLoadTime = null;
+        
         this.init();
     }
 
@@ -244,6 +250,9 @@ class ProgressManager {
                 if (data.success) {
                     console.log(`✅ バッチ保存完了: ${updates.length}件`);
                     this.pendingUpdates.clear();
+                    
+                    // キャッシュを無効化（次回アクセス時に最新データを取得）
+                    this.invalidateProgressCache();
                 } else {
                     console.error('❌ バッチ保存失敗:', data.error);
                 }
@@ -275,12 +284,28 @@ class ProgressManager {
         }
     }
     
-    // 最初に表示されるUIの初期化
+    // 進捗データキャッシュを無効化
+    invalidateProgressCache() {
+        this.progressDataCache = null;
+        this.progressCacheExpiry = null;
+        console.log('🗑️ 進捗データキャッシュを無効化しました');
+    }
+    
+    // 最初に表示されるUIの初期化（キャッシュ最適化版）
     async initializeUI() {
         const currentIdentifier = this.getCurrentIdentifier();
         if (currentIdentifier) {
-            // 詳細ページの場合 - 進捗データ読み込み後に初期化
-            await this.loadProgressFromServer();
+            // 詳細ページの場合 - キャッシュチェック後に初期化
+            console.log('📄 Content画面：進捗データ初期化開始');
+            
+            // 既にデータがキャッシュされているかチェック
+            if (this.progressData && Object.keys(this.progressData).length > 0) {
+                console.log('🚀 Content画面：キャッシュされた進捗データを使用');
+            } else {
+                // キャッシュがない場合のみサーバーから読み込み
+                await this.loadProgressFromServer();
+            }
+            
             this.initializeProgressForIdentifier(currentIdentifier);
         } else {
             // ホームページの場合
@@ -290,9 +315,18 @@ class ProgressManager {
         }
     }
 
-    // サーバーから進捗データを読み込み、内部データ構造を構築
-    async loadProgressFromServer() {
+    // サーバーから進捗データを読み込み、内部データ構造を構築（キャッシュ機能付き）
+    async loadProgressFromServer(forceRefresh = false) {
         try {
+            // キャッシュチェック（強制リフレッシュでない場合）
+            const now = Date.now();
+            if (!forceRefresh && this.progressDataCache && this.progressCacheExpiry && now < this.progressCacheExpiry) {
+                console.log('✅ 進捗データキャッシュを使用（API呼び出しスキップ）');
+                this.progressData = this.progressDataCache;
+                return;
+            }
+            
+            console.log('🔄 サーバーから進捗データを取得中...');
             const response = await fetch(`/api/progress/${this.userId}`);
             if (response.status === 401) {
                 this.showUserFriendlyError('認証エラー', 'セッションが期限切れです。再ログインしてください。', true);
@@ -309,7 +343,13 @@ class ProgressManager {
 
             if (data.success) {
                 this.progressData = this.formatProgressData(data.progress);
-                console.log('✅ 進捗データを正常に読み込みました');
+                
+                // キャッシュに保存
+                this.progressDataCache = this.progressData;
+                this.progressCacheExpiry = now + this.PROGRESS_CACHE_DURATION;
+                this.lastProgressLoadTime = now;
+                
+                console.log('✅ サーバーから進捗データ読み込み完了（キャッシュに保存）');
             } else {
                 console.error('進捗データの読み込みに失敗しました:', data.error);
                 this.progressData = {};
@@ -456,10 +496,15 @@ class ProgressManager {
         }
     }
 
-    // トップページのカードに進捗を表示
-    async updateHomePageProgress() {
-        // まずサーバーから最新の進捗を読み込む
-        await this.loadProgressFromServer();
+    // トップページのカードに進捗を表示（キャッシュ最適化版）
+    async updateHomePageProgress(forceRefresh = false) {
+        // キャッシュされたデータがあるかチェック
+        if (!forceRefresh && this.progressData && Object.keys(this.progressData).length > 0) {
+            console.log('🚀 ホーム画面：キャッシュされた進捗データを使用');
+        } else {
+            // キャッシュがない場合のみサーバーから読み込み
+            await this.loadProgressFromServer(forceRefresh);
+        }
 
         const cards = document.querySelectorAll('.identifier-card');
         cards.forEach(card => {
