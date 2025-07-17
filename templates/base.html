@@ -832,9 +832,10 @@
             const tutorialCompleted = localStorage.getItem('tutorialCompleted');
             const isHomePage = document.body.classList.contains('homepage');
             
-            if (!tutorialCompleted && isHomePage) {
-                showTutorial();
-            }
+            // チュートリアル自動表示は一時的に無効化
+            // if (!tutorialCompleted && isHomePage) {
+            //     showTutorial();
+            // }
             
             // チュートリアルボタンの初期化（必ず実行）
             setupTutorialButtons();
