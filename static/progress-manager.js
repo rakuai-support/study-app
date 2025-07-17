@@ -808,12 +808,19 @@ class ProgressManager {
         try {
             const recentActivities = JSON.parse(localStorage.getItem('recentActivities') || '[]');
             
-            // 教科名を取得（簡易版）
-            const subjectMap = {
-                '831': '国語', '832': '算数', '833': '理科', '834': '社会', '835': '英語'
-            };
+            // 実際のidentifierパターンに基づく教科判定
+            let subject = '学習';
             const subjectCode = identifier.substring(0, 3);
-            const subject = subjectMap[subjectCode] || '学習';
+            
+            const subjectMap = {
+                '831': '国語',
+                '832': '算数', 
+                '833': '理科',
+                '834': '社会',
+                '835': '英語'
+            };
+            
+            subject = subjectMap[subjectCode] || '学習';
             
             // レベル名を日本語化
             const levelNames = {
@@ -830,11 +837,20 @@ class ProgressManager {
                 level: level,
                 goalIndex: goalIndex,
                 completed: isCompleted,
-                icon: isCompleted ? 'fas fa-check' : 'fas fa-undo',
+                icon: isCompleted ? 'fas fa-check-circle' : 'fas fa-undo',
                 title: isCompleted ? 
                     `${subject}の${levelName}目標を達成` : 
                     `${subject}の${levelName}目標をリセット`
             };
+            
+            // デバッグログ
+            console.log('📝 [DEBUG] 活動記録:', {
+                identifier: identifier,
+                subject: subject,
+                levelName: levelName,
+                title: activity.title,
+                timestamp: new Date(activity.timestamp).toLocaleTimeString()
+            });
             
             // 配列に追加（最大50件まで保持）
             recentActivities.push(activity);
@@ -845,7 +861,7 @@ class ProgressManager {
             // localStorageに保存
             localStorage.setItem('recentActivities', JSON.stringify(recentActivities));
             
-            console.log('📝 最近の活動に記録:', activity.title);
+            console.log('✅ 最近の活動に記録完了:', activity.title);
             
         } catch (error) {
             console.error('❌ 最近の活動記録エラー:', error);
