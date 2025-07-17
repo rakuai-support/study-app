@@ -1,5 +1,6 @@
 import pandas as pd
 import json
+import time
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 import os
 import google.generativeai as genai
@@ -64,6 +65,10 @@ class StudyDataViewer:
     def __init__(self):
         self.data = None
         self._cached_stats = None  # 統計情報のキャッシュ
+        self._content_cache = {}  # コンテンツ詳細のキャッシュ
+        self._subject_cache = {}  # 教科別データのキャッシュ
+        self._cache_timestamp = None  # キャッシュタイムスタンプ
+        self.CACHE_DURATION = 300  # 5分キャッシュ
         self.load_data()
 
     def load_data(self):
@@ -71,8 +76,14 @@ class StudyDataViewer:
         try:
             # psycopg v3対応のデータベース操作
             with db_manager.get_connection() as conn:
-                # データベースからデータをpandas DataFrameに読み込み、identifierで昇順ソート
-                self.data = pd.read_sql_query("SELECT * FROM learning_items ORDER BY identifier ASC", conn)
+                # 必要な列のみを選択してクエリを最適化
+                optimized_query = """
+                    SELECT identifier, learning_prompt, keywords, grade, subject, 
+                           learning_objective, difficulty, content_types 
+                    FROM learning_items 
+                    ORDER BY identifier ASC
+                """
+                self.data = pd.read_sql_query(optimized_query, conn)
             
             print(f"データベースからデータを正常に読み込みました。行数: {len(self.data)}")
             # データ読み込み時に統計情報もキャッシュ
@@ -131,9 +142,15 @@ class StudyDataViewer:
         return []
     
     def get_all_content_with_subjects(self):
-        """全てのコンテンツを教科ごとに分類して取得"""
+        """全てのコンテンツを教科ごとに分類して取得（キャッシュ付き）"""
         if self.data is None:
             return {}
+        
+        # キャッシュチェック
+        now = time.time()
+        if (self._subject_cache and self._cache_timestamp and 
+            (now - self._cache_timestamp) < self.CACHE_DURATION):
+            return self._subject_cache
         
         content_by_subject = {}
         # self.dataは既にidentifierでソート済み
@@ -153,6 +170,10 @@ class StudyDataViewer:
                 except (json.JSONDecodeError, KeyError):
                     item['total_goals'] = 0 # パース失敗時は0
             content_by_subject[subject] = items
+        
+        # キャッシュに保存
+        self._subject_cache = content_by_subject
+        self._cache_timestamp = now
                 
         return content_by_subject
     
@@ -162,9 +183,13 @@ class StudyDataViewer:
         return list(content_by_subject.keys())
     
     def get_content_by_id(self, identifier):
-        """指定された識別子の内容を取得"""
+        """指定された識別子の内容を取得（キャッシュ付き）"""
         if self.data is None:
             return None
+        
+        # キャッシュチェック
+        if identifier in self._content_cache:
+            return self._content_cache[identifier]
         
         # 識別子で行を検索
         row = self.data[self.data['identifier'] == identifier]
@@ -184,11 +209,16 @@ class StudyDataViewer:
             }
             content_creation_prompt = json.loads(row.iloc[0]['content_types'])
             
-            return {
+            result = {
                 'identifier': identifier,
                 'learningPromptData': learning_prompt_data,
                 'contentCreationPrompt': content_creation_prompt
             }
+            
+            # キャッシュに保存
+            self._content_cache[identifier] = result
+            return result
+            
         except (json.JSONDecodeError, KeyError) as e:
             print(f"データ解析エラー (ID: {identifier}): {e}")
             return None

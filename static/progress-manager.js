@@ -308,10 +308,8 @@ class ProgressManager {
             
             this.initializeProgressForIdentifier(currentIdentifier);
         } else {
-            // ホームページの場合
-            setTimeout(async () => {
-                await this.updateHomePageProgress();
-            }, 100);
+            // ホームページの場合 - 描画最適化：非同期で即座実行
+            this.updateHomePageProgress();
         }
     }
 
