@@ -8,6 +8,7 @@ from datetime import datetime
 from auth import User, get_current_user, login_required
 from dotenv import load_dotenv
 from database import db_manager, initialize_database
+from psycopg.rows import dict_row
 
 # 環境変数を読み込み（開発環境用）
 load_dotenv()
@@ -86,6 +87,12 @@ class StudyDataViewer:
                 self.data = pd.read_sql_query(optimized_query, conn)
             
             print(f"データベースからデータを正常に読み込みました。行数: {len(self.data)}")
+            
+            # デバッグ: 教科リストを出力
+            if self.data is not None and not self.data.empty:
+                subjects = self.data['subject'].unique()
+                print(f"[DEBUG] 読み込まれた教科: {list(subjects)}")
+            
             # データ読み込み時に統計情報もキャッシュ
             self._calculate_stats_cache()
         except Exception as e:
@@ -178,9 +185,18 @@ class StudyDataViewer:
         return content_by_subject
     
     def get_subjects(self):
-        """利用可能な教科のリストを取得"""
-        content_by_subject = self.get_all_content_with_subjects()
-        return list(content_by_subject.keys())
+        """利用可能な教科のリストを取得（PostgreSQLから直接取得）"""
+        try:
+            with db_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT DISTINCT subject FROM learning_items ORDER BY subject")
+                    subjects = [row[0] for row in cur.fetchall()]
+                    return subjects
+        except Exception as e:
+            print(f"[ERROR] 教科リスト取得エラー: {e}")
+            # フォールバック: TSVデータから取得
+            content_by_subject = self.get_all_content_with_subjects()
+            return list(content_by_subject.keys())
     
     def get_content_by_id(self, identifier):
         """指定された識別子の内容を取得（キャッシュ付き）"""
@@ -251,6 +267,40 @@ def get_content(identifier):
         return jsonify(content)
     else:
         return jsonify({'error': 'Content not found'}), 404
+
+@app.route('/api/learning-item/<identifier>')
+def get_learning_item(identifier):
+    """API: 指定されたIDの学習項目情報（教科名等）を取得"""
+    try:
+        with db_manager.get_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    "SELECT identifier, subject FROM learning_items WHERE identifier = %s",
+                    (identifier,)
+                )
+                item = cur.fetchone()
+                
+                if item:
+                    return jsonify({
+                        'identifier': item['identifier'],
+                        'subject': item['subject']
+                    })
+                else:
+                    return jsonify({'error': 'Learning item not found'}), 404
+                    
+    except Exception as e:
+        print(f"[ERROR] 学習項目取得エラー: {e}")
+        return jsonify({'error': 'Database error'}), 500
+
+@app.route('/api/subjects')
+def get_subjects_api():
+    """API: 利用可能な教科のリストを取得"""
+    try:
+        subjects = viewer.get_subjects()
+        return jsonify(subjects)
+    except Exception as e:
+        print(f"[ERROR] 教科リスト取得エラー: {e}")
+        return jsonify(['国語', '算数', '数学', '理科', '社会', '英語', '道徳', '音楽', '美術', '保健体育', '技術・家庭']), 500
 
 @app.route('/content/<identifier>')
 @login_required
@@ -888,6 +938,115 @@ def activate_premium():
         return jsonify({'success': True, 'message': 'プレミアムアカウントが有効化されました'})
     else:
         return jsonify({'success': False, 'error': '認証コードが無効または期限切れです'}), 400
+
+@app.route('/api/reload-learning-data', methods=['POST'])
+def reload_learning_data():
+    """学習データを再読み込み（管理者用）"""
+    try:
+        # 簡易管理者認証
+        admin_key = request.json.get('adminKey', '') if request.json else ''
+        if admin_key != 'admin123':
+            return jsonify({'success': False, 'error': '管理者権限が必要です'}), 403
+        
+        print("[API] 学習データの再読み込みを開始...")
+        
+        # 既存のlearning_itemsテーブルを削除
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM learning_items")
+                conn.commit()
+                print("[API] 既存のlearning_itemsデータを削除しました")
+        
+        # 学習データを再読み込み
+        from database import _load_learning_data
+        _load_learning_data()
+        
+        # 結果を確認
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM learning_items")
+                count = cur.fetchone()[0]
+                
+                # テスト用identifierの確認
+                cur.execute("SELECT identifier, subject FROM learning_items WHERE identifier = %s", ('8310213211100000',))
+                test_result = cur.fetchone()
+                
+                # 教科別件数確認
+                cur.execute("SELECT subject, COUNT(*) FROM learning_items GROUP BY subject ORDER BY subject")
+                subjects = cur.fetchall()
+        
+        return jsonify({
+            'success': True,
+            'message': f'学習データの再読み込みが完了しました',
+            'totalItems': count,
+            'testIdentifierFound': bool(test_result),
+            'testIdentifierSubject': test_result[1] if test_result else None,
+            'subjectCounts': {subject: count for subject, count in subjects}
+        })
+        
+    except Exception as e:
+        print(f"[API] 学習データ再読み込みエラー: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/update-subject-names', methods=['POST'])
+def update_subject_names():
+    """教科名を標準化（管理者用）"""
+    try:
+        # 簡易管理者認証
+        admin_key = request.json.get('adminKey', '') if request.json else ''
+        if admin_key != 'admin123':
+            return jsonify({'success': False, 'error': '管理者権限が必要です'}), 403
+        
+        print("[API] 教科名の標準化を開始...")
+        
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cur:
+                # 現在の教科名を確認
+                cur.execute("SELECT DISTINCT subject FROM learning_items ORDER BY subject")
+                current_subjects = [row[0] for row in cur.fetchall()]
+                
+                # 教科名を更新
+                updates = [
+                    ("特別の教科 道徳", "道徳"),
+                    ("外国語", "英語")
+                ]
+                
+                update_results = []
+                for old_name, new_name in updates:
+                    cur.execute(
+                        "UPDATE learning_items SET subject = %s WHERE subject = %s",
+                        (new_name, old_name)
+                    )
+                    updated_count = cur.rowcount
+                    update_results.append(f"'{old_name}' → '{new_name}': {updated_count}件更新")
+                    print(f"[API] '{old_name}' → '{new_name}': {updated_count}件更新")
+                
+                conn.commit()
+                
+                # 更新後の教科名を確認
+                cur.execute("SELECT DISTINCT subject FROM learning_items ORDER BY subject")
+                updated_subjects = [row[0] for row in cur.fetchall()]
+                
+                # 教科別件数確認
+                cur.execute("SELECT subject, COUNT(*) FROM learning_items GROUP BY subject ORDER BY subject")
+                subject_counts = {subject: count for subject, count in cur.fetchall()}
+        
+        return jsonify({
+            'success': True,
+            'message': '教科名の標準化が完了しました',
+            'currentSubjects': current_subjects,
+            'updatedSubjects': updated_subjects,
+            'updateResults': update_results,
+            'subjectCounts': subject_counts
+        })
+        
+    except Exception as e:
+        print(f"[API] 教科名標準化エラー: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)

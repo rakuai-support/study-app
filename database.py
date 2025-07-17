@@ -225,20 +225,39 @@ def _load_learning_data():
         with db_manager.get_connection() as conn:
             with conn.cursor() as cur:
                 for _, row in df.iterrows():
-                    cur.execute("""
-                        INSERT INTO learning_items 
-                        (identifier, learning_prompt, keywords, grade, subject, learning_objective, difficulty, content_types)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        row['identifier'],
-                        row['learningPromptData'],
-                        row['keywords'] if pd.notna(row['keywords']) else None,
-                        row['grade'] if pd.notna(row['grade']) else None,
-                        row['subject'] if pd.notna(row['subject']) else None,
-                        row['learningObjective'] if pd.notna(row['learningObjective']) else None,
-                        row['difficulty'] if pd.notna(row['difficulty']) else None,
-                        row['contentCreationPrompt']
-                    ))
+                    try:
+                        # learningPromptDataのJSONからsubject等を抽出
+                        learning_data = json.loads(row['learningPromptData'])
+                        
+                        cur.execute("""
+                            INSERT INTO learning_items 
+                            (identifier, learning_prompt, keywords, grade, subject, learning_objective, difficulty, content_types)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            row['identifier'],
+                            row['learningPromptData'],
+                            json.dumps(learning_data.get('keywords', [])) if learning_data.get('keywords') else None,
+                            learning_data.get('grade'),
+                            learning_data.get('subject'),  # JSONからsubjectを抽出
+                            learning_data.get('learningObjective'),
+                            learning_data.get('difficulty'),
+                            row['contentCreationPrompt']
+                        ))
+                    except (json.JSONDecodeError, KeyError) as e:
+                        print(f"[DB] WARNING: データ解析エラー (ID: {row.get('identifier', 'unknown')}): {e}")
+                        # エラー時はデフォルト値で挿入
+                        cur.execute("""
+                            INSERT INTO learning_items 
+                            (identifier, learning_prompt, keywords, grade, subject, learning_objective, difficulty, content_types)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            row['identifier'],
+                            row['learningPromptData'],
+                            None, None, '学習', None, None,
+                            row['contentCreationPrompt']
+                        ))
+                        continue
+                
                 conn.commit()
         
         print(f"[DB] SUCCESS: Loaded {len(df)} learning items")
