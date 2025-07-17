@@ -642,12 +642,12 @@
             if (response.ok) {
                 subjects = await response.json();
             } else {
-                // フォールバック: 固定リスト
-                subjects = ['国語', '算数', '数学', '理科', '社会', '英語', '道徳', '音楽', '美術', '保健体育', '技術・家庭'];
+                // フォールバック: identifier順の固定リスト
+                subjects = ['国語', '社会', '数学', '理科', '音楽', '英語', '技術・家庭', '保健体育', '美術', '道徳'];
             }
         } catch (error) {
             console.error('教科リスト取得エラー:', error);
-            subjects = ['国語', '算数', '数学', '理科', '社会', '英語', '道徳', '音楽', '美術', '保健体育', '技術・家庭'];
+            subjects = ['国語', '社会', '数学', '理科', '音楽', '英語', '技術・家庭', '保健体育', '美術', '道徳'];
         }
         
         // 教科別進捗コンテナを動的に生成
@@ -670,39 +670,50 @@
             });
         }
         
-        for (let subject of subjects) {
-            try {
-                const cards = document.querySelectorAll(`[data-subject="${subject}"]`);
-                let totalItems = 0;
-                let achievedItems = 0;
-                
-                cards.forEach(card => {
-                    totalItems++;
+        // APIから学習項目データを取得して教科別進捗を計算
+        try {
+            const response = await fetch('/api/progress-stats');
+            if (!response.ok) {
+                throw new Error('統計データの取得に失敗しました');
+            }
+            const stats = await response.json();
+            
+            for (let subject of subjects) {
+                try {
+                    // 各教科の項目を統計データから取得
+                    const subjectItems = stats.items_by_subject[subject] || [];
+                    const totalItems = subjectItems.length;
+                    let achievedItems = 0;
+                    
+                    // 進捗データが存在する場合のみ計算
                     const progressData = window.progressManager?.progressData;
                     if (progressData) {
-                        const identifier = card.getAttribute('data-identifier');
-                        if (identifier && progressData[identifier]) {
-                            const progress = window.progressManager.getProgressForCard(identifier);
-                            if (progress.percentage > 50) {
-                                achievedItems++;
+                        subjectItems.forEach(item => {
+                            if (progressData[item.identifier]) {
+                                const progress = window.progressManager.getProgressForCard(item.identifier);
+                                if (progress.percentage > 50) {
+                                    achievedItems++;
+                                }
                             }
-                        }
+                        });
                     }
-                });
-                
-                const percentage = totalItems > 0 ? Math.round((achievedItems / totalItems) * 100) : 0;
-                
-                const subjectItem = document.querySelector(`.subject-item[data-subject="${subject}"]`);
-                if (subjectItem) {
-                    const fill = subjectItem.querySelector('.subject-fill');
-                    const percent = subjectItem.querySelector('.subject-percent');
                     
-                    if (fill) fill.style.width = percentage + '%';
-                    if (percent) percent.textContent = percentage + '%';
+                    const percentage = totalItems > 0 ? Math.round((achievedItems / totalItems) * 100) : 0;
+                    
+                    const subjectItem = document.querySelector(`.subject-item[data-subject="${subject}"]`);
+                    if (subjectItem) {
+                        const fill = subjectItem.querySelector('.subject-fill');
+                        const percent = subjectItem.querySelector('.subject-percent');
+                        
+                        if (fill) fill.style.width = percentage + '%';
+                        if (percent) percent.textContent = percentage + '%';
+                    }
+                } catch (error) {
+                    console.error(`${subject}の進捗更新エラー:`, error);
                 }
-            } catch (error) {
-                console.error(`${subject}の進捗更新エラー:`, error);
             }
+        } catch (error) {
+            console.error('教科別進捗データの取得エラー:', error);
         }
     }
 

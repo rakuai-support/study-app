@@ -149,7 +149,7 @@ class StudyDataViewer:
         return []
     
     def get_all_content_with_subjects(self):
-        """全てのコンテンツを教科ごとに分類して取得（キャッシュ付き）"""
+        """全てのコンテンツを教科ごとに分類して取得（identifier順でキャッシュ付き）"""
         if self.data is None:
             return {}
         
@@ -178,25 +178,39 @@ class StudyDataViewer:
                     item['total_goals'] = 0 # パース失敗時は0
             content_by_subject[subject] = items
         
+        # identifier順で並び替えるため、教科順序を取得
+        subject_order = self.get_subjects()
+        
+        # 順序通りに並び替えた辞書を作成
+        ordered_content = {}
+        for subject in subject_order:
+            if subject in content_by_subject:
+                ordered_content[subject] = content_by_subject[subject]
+        
         # キャッシュに保存
-        self._subject_cache = content_by_subject
+        self._subject_cache = ordered_content
         self._cache_timestamp = now
                 
-        return content_by_subject
+        return ordered_content
     
     def get_subjects(self):
-        """利用可能な教科のリストを取得（PostgreSQLから直接取得）"""
+        """利用可能な教科のリストを取得（identifier順で取得）"""
         try:
             with db_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT DISTINCT subject FROM learning_items ORDER BY subject")
+                    # identifier順（学習指導要領の順序）で教科を取得
+                    cur.execute("""
+                        SELECT subject, MIN(identifier) as first_identifier
+                        FROM learning_items 
+                        GROUP BY subject 
+                        ORDER BY MIN(identifier) ASC
+                    """)
                     subjects = [row[0] for row in cur.fetchall()]
                     return subjects
         except Exception as e:
             print(f"[ERROR] 教科リスト取得エラー: {e}")
-            # フォールバック: TSVデータから取得
-            content_by_subject = self.get_all_content_with_subjects()
-            return list(content_by_subject.keys())
+            # フォールバック: identifier順の固定リスト
+            return ['国語', '社会', '数学', '理科', '音楽', '英語', '技術・家庭', '保健体育', '美術', '道徳']
     
     def get_content_by_id(self, identifier):
         """指定された識別子の内容を取得（キャッシュ付き）"""
@@ -351,12 +365,16 @@ def test_api_key():
 def get_progress_stats():
     """全ての学習項目の進捗統計情報を取得（キャッシュ使用）"""
     try:
+        # 教科別データを取得
+        items_by_subject = viewer.get_all_content_with_subjects()
+        
         # キャッシュが存在する場合はそれを返す
         if viewer._cached_stats:
             return jsonify({
                 'success': True,
                 'totalIdentifiers': viewer._cached_stats['totalIdentifiers'],
                 'totalGoals': viewer._cached_stats['totalGoals'],
+                'items_by_subject': items_by_subject,
                 'cached': True  # キャッシュ使用であることを示す
             })
         
@@ -369,6 +387,7 @@ def get_progress_stats():
             'success': True,
             'totalIdentifiers': len(viewer.data),
             'totalGoals': 0,  # フォールバック時は簡易計算
+            'items_by_subject': items_by_subject,
             'cached': False
         })
         
@@ -594,7 +613,7 @@ def ai_generate():
                 'success': False,
                 'error': 'USAGE_LIMIT_EXCEEDED',
                 'message': f'無料利用回数（30回/月）を超過しました。現在の利用回数: {user.free_usage_count}/30',
-                'upgrade_url': 'https://your-website.com/premium'
+                'upgrade_url': 'https://www.smilefactory-rakuai.com/product-page/%E5%AD%A6%E7%BF%92%E6%8C%87%E5%B0%8E%E8%A6%81%E9%A0%98%E6%BA%96%E6%8B%A0-ai%E5%AD%A6%E7%BF%92%E3%82%A2%E3%83%97%E3%83%AA'
             }), 429
         
         data = request.get_json()
