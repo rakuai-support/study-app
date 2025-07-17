@@ -25,96 +25,74 @@ except ImportError:
 # 環境変数読み込み
 load_dotenv()
 
+# グローバル接続プール（アプリケーション起動時に1回だけ作成）
+_global_connection_pool = None
+_global_db_type = None
+
+def initialize_global_connection_pool():
+    """グローバル接続プールの初期化（1回のみ実行）"""
+    global _global_connection_pool, _global_db_type
+    
+    if _global_connection_pool is not None:
+        print("[DB] INFO: Global connection pool already exists")
+        return
+    
+    database_url = os.getenv('DATABASE_URL')
+    print(f"[DB] INFO: Initializing global connection pool")
+    
+    if database_url and 'postgresql://' in database_url:
+        try:
+            if ConnectionPool:
+                print("[DB] INFO: Creating global PostgreSQL connection pool")
+                _global_connection_pool = ConnectionPool(
+                    database_url,
+                    min_size=2,
+                    max_size=20,
+                    max_idle=600,
+                    max_lifetime=7200
+                )
+                _global_db_type = 'postgresql'
+                print("[DB] SUCCESS: Global PostgreSQL connection pool created")
+            else:
+                print("[DB] WARNING: ConnectionPool not available")
+                _global_connection_pool = database_url
+                _global_db_type = 'postgresql_direct'
+        except Exception as e:
+            print(f"[DB] ERROR: Failed to create global connection pool: {e}")
+            _global_connection_pool = None
+            _global_db_type = None
+
 class DatabaseManager:
-    """psycopg v3を使用したデータベース管理クラス（シングルトンパターン）"""
-    
-    _instance = None
-    _initialized = False
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(DatabaseManager, cls).__new__(cls)
-        return cls._instance
+    """グローバル接続プールを使用したデータベース管理クラス"""
     
     def __init__(self):
-        if DatabaseManager._initialized:
-            return
-        
-        self.connection_pool = None
-        self.db_type = None
-        self._initialize_connection()
-        DatabaseManager._initialized = True
-        print("[DB] INFO: DatabaseManager singleton initialized")
+        # グローバル接続プールがまだ初期化されていない場合は初期化
+        if _global_connection_pool is None:
+            initialize_global_connection_pool()
     
-    def _initialize_connection(self):
-        """データベース接続の初期化"""
-        database_url = os.getenv('DATABASE_URL')
-        print(f"[DB] DEBUG: DATABASE_URL = {database_url}")
-        
-        if database_url and 'postgresql://' in database_url:
-            try:
-                # psycopg v3で接続プール作成（ConnectionPoolが利用可能な場合）
-                if ConnectionPool:
-                    print("[DB] INFO: Creating PostgreSQL connection pool")
-                    self.connection_pool = ConnectionPool(
-                        database_url,
-                        min_size=2,
-                        max_size=20,
-                        max_idle=600,
-                        max_lifetime=7200
-                    )
-                else:
-                    # ConnectionPoolが利用できない場合は直接接続
-                    print("[DB] DEBUG: Using direct connection")
-                    self.connection_pool = None
-                    self.database_url = database_url
-                
-                # db_typeを先に設定
-                self.db_type = 'postgresql'
-                
-                # 接続テスト
-                print("[DB] DEBUG: Testing connection...")
-                if self.connection_pool:
-                    test_conn = self.connection_pool.connection()
-                else:
-                    test_conn = psycopg.connect(self.database_url)
-                
-                with test_conn as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT 1")
-                        result = cur.fetchone()
-                        print(f"[DB] DEBUG: Connection test result: {result}")
-                
-                print(f"[DB] SUCCESS: PostgreSQL connection pool created (psycopg v{PSYCOPG_VERSION})")
-                return
-                
-            except Exception as e:
-                print(f"[DB] ERROR: PostgreSQL connection failed: {e}")
-                print("[DB] WARNING: Database features will be disabled")
-                import traceback
-                traceback.print_exc()
-                self.connection_pool = None
-                self.db_type = None
-                return
-        
-        # PostgreSQL設定なし
-        print("[DB] WARNING: No PostgreSQL configuration found")
-        self.connection_pool = None
-        self.db_type = None
+    @property
+    def connection_pool(self):
+        """グローバル接続プールへのアクセス"""
+        return _global_connection_pool
+    
+    @property
+    def db_type(self):
+        """データベースタイプへのアクセス"""
+        return _global_db_type
     
     def get_connection(self):
         """データベース接続を取得"""
-        if self.connection_pool is None and self.db_type == 'postgresql':
-            self._initialize_connection()
-        
-        if self.db_type == 'postgresql':
-            if self.connection_pool:
-                return self.connection_pool.connection()
+        if _global_db_type == 'postgresql':
+            if _global_connection_pool:
+                # ConnectionPoolから接続を取得
+                return _global_connection_pool.connection()
             else:
-                # ConnectionPoolが利用できない場合は直接接続
-                return psycopg.connect(self.database_url)
+                raise Exception("Database connection pool not available")
+        elif _global_db_type == 'postgresql_direct':
+            # 直接接続
+            return psycopg.connect(_global_connection_pool)  # connection_poolにURLが格納されている
         else:
-            raise Exception("Database connection not available - check network connection")
+            raise Exception("Database connection not available - PostgreSQL required")
     
     def return_connection(self, conn):
         """接続を返却"""
@@ -134,6 +112,9 @@ class DatabaseManager:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(query, params)
                 return cur.fetchone()
+
+# グローバル接続プールの初期化
+initialize_global_connection_pool()
 
 # グローバルインスタンス
 db_manager = DatabaseManager()

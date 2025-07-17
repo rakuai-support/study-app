@@ -339,11 +339,17 @@ def update_progress():
         
         print(f"[DEBUG] Executing SQL: {sql} with params {params}") # デバッグログ
         
-        # psycopg v3対応のデータベース操作
+        # psycopg v3対応のデータベース操作（トランザクション保護付き）
         with db_manager.get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, params)
-                conn.commit()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(sql, params)
+                    conn.commit()
+                    print("[DEBUG] Individual progress update committed")
+            except Exception as e:
+                conn.rollback()
+                print(f"[ERROR] Individual update transaction rolled back: {e}")
+                raise
 
         print("[DEBUG] Progress update successful.") # デバッグログ
         return jsonify({'success': True, 'message': '進捗を更新しました'})
@@ -397,11 +403,17 @@ def batch_update_progress():
         
         print(f"[DEBUG] Executing batch update: {len(batch_params)} records")
         
-        # バッチでDBに書き込み
+        # バッチでDBに書き込み（トランザクション保護付き）
         with db_manager.get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.executemany(sql, batch_params)
-                conn.commit()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.executemany(sql, batch_params)
+                    conn.commit()
+                    print(f"[DEBUG] Transaction committed: {len(batch_params)} records")
+            except Exception as e:
+                conn.rollback()
+                print(f"[ERROR] Transaction rolled back due to: {e}")
+                raise
 
         print(f"[DEBUG] Batch progress update successful: {len(batch_params)} records updated")
         return jsonify({
