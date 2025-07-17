@@ -145,7 +145,7 @@ class ProgressManager {
         this.updateLocalCache(identifier, level, goalIndex, isCompleted);
         
         // 2. UI即時更新
-        this.updateUIImmediately(identifier);
+        this.updateUIImmediately(identifier, level, goalIndex, isCompleted);
         
         // 3. 変更を未保存リストに追加
         const updateKey = `${identifier}.${level}.${goalIndex}`;
@@ -182,7 +182,7 @@ class ProgressManager {
     }
     
     // UI即時更新
-    updateUIImmediately(identifier) {
+    updateUIImmediately(identifier, level, goalIndex, isCompleted) {
         // 進捗バーと統計を即座に更新
         this.updateProgressDisplay(identifier);
         
@@ -808,19 +808,74 @@ class ProgressManager {
         try {
             const recentActivities = JSON.parse(localStorage.getItem('recentActivities') || '[]');
             
-            // 実際のidentifierパターンに基づく教科判定
-            let subject = '学習';
-            const subjectCode = identifier.substring(0, 3);
+            // データベースから教科情報を取得
+            let subject = '学習'; // デフォルト値
             
-            const subjectMap = {
-                '831': '国語',
-                '832': '算数', 
-                '833': '理科',
-                '834': '社会',
-                '835': '英語'
-            };
+            // 現在のページから教科情報を取得（learning_itemsテーブルのsubject列を使用）
+            this.getSubjectFromDatabase(identifier).then(dbSubject => {
+                if (dbSubject) {
+                    // データベースの教科名をそのまま使用（既に標準化済み）
+                    subject = dbSubject;
+                    this.updateActivityWithSubject(identifier, level, goalIndex, isCompleted, subject);
+                } else {
+                    // データベースから取得できない場合のフォールバック
+                    subject = this.getSubjectFromIdentifier(identifier);
+                    this.updateActivityWithSubject(identifier, level, goalIndex, isCompleted, subject);
+                }
+            }).catch(() => {
+                // エラー時はフォールバック
+                subject = this.getSubjectFromIdentifier(identifier);
+                this.updateActivityWithSubject(identifier, level, goalIndex, isCompleted, subject);
+            });
             
-            subject = subjectMap[subjectCode] || '学習';
+        } catch (error) {
+            console.error('❌ [ERROR] 活動記録エラー:', error);
+        }
+    }
+    
+    // データベースから教科情報を取得
+    async getSubjectFromDatabase(identifier) {
+        try {
+            const response = await fetch(`/api/content/${identifier}`);
+            if (response.ok) {
+                const text = await response.text();
+                
+                // JSONパースエラーを回避するため、NaNを置換
+                const cleanText = text.replace(/:\s*NaN/g, ': null');
+                const data = JSON.parse(cleanText);
+                
+                // learningPromptDataからsubject情報を取得
+                if (data.learningPromptData && data.learningPromptData.subject) {
+                    return data.learningPromptData.subject;
+                }
+            }
+        } catch (error) {
+            console.error('❌ [ERROR] 教科情報取得エラー:', error);
+            console.error('❌ [ERROR] identifier:', identifier);
+        }
+        return null;
+    }
+    
+    // identifierから教科を推定（フォールバック用）
+    getSubjectFromIdentifier(identifier) {
+        const prefix = identifier.substring(0, 3);
+        const subjectMap = {
+            '831': '国語',
+            '832': '算数',
+            '833': '理科', 
+            '834': '社会',
+            '835': '数学',
+            '836': '理科',
+            '83H': '英語',
+            '83K': '道徳'
+        };
+        return subjectMap[prefix] || '学習';
+    }
+    
+    // 教科情報を含む活動更新
+    updateActivityWithSubject(identifier, level, goalIndex, isCompleted, subject) {
+        try {
+            const recentActivities = JSON.parse(localStorage.getItem('recentActivities') || '[]');
             
             // レベル名を日本語化
             const levelNames = {
@@ -862,6 +917,13 @@ class ProgressManager {
             localStorage.setItem('recentActivities', JSON.stringify(recentActivities));
             
             console.log('✅ 最近の活動に記録完了:', activity.title);
+            
+            // 統計ダッシュボードが開いている場合は即座更新
+            if (document.getElementById('statisticsModal')?.classList.contains('show')) {
+                if (window.updateRecentActivity) {
+                    window.updateRecentActivity();
+                }
+            }
             
         } catch (error) {
             console.error('❌ 最近の活動記録エラー:', error);
